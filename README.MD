@@ -4,7 +4,7 @@ When I was a DOS user, the one main killer application that I used day to day wa
 The program name is `STEM` because CP/M doesn't have subdirectories, to anything with "tree" in the name would be kind of dumb.
 
 ## Status
-As of right now, it'll just list the files in the current logged drive
+As of right now, it will list files, change drives, delete individual files
 
 ### Assembling
 This is written to run in `CP/M 2.2`. A disk image with CP/M, the assembler, debugger, editor, and everything else that's needed is provided on the SD card for the A-D.  Note: [SD card image can be found here](https://adwaterandstir.com/instructions/)
@@ -22,8 +22,8 @@ Once there, assemble it using `asm`:
 ```  
 D>asm stem
 CP/M ASSEMBLER - VER 2.0
-0670
-005H USE FACTOR
+1012
+00CH USE FACTOR
 END OF ASSEMBLY
 ```   
 The assembler finished with no errors - yay!!  There are two new files on the disk: `stem.prn` and `stem.hex`:
@@ -42,9 +42,9 @@ The `stem.hex` could be run in the `ddt` debugger, but let's just create the exe
 D>load stem
 
 FIRST ADDRESS 0100
-LAST  ADDRESS 044D
-BYTES READ    034E
-RECORDS WRITTEN 07
+LAST  ADDRESS 0B44
+BYTES READ    0A45
+RECORDS WRITTEN 15
 ```  
 Now there is another file in the directory:
 ```   
@@ -60,32 +60,40 @@ D>stem
 ``` 
 The screen will be cleared and the welcome message shown:
 ```
-
-               Altair 8800 File Manager
-            2026 Mattydyne Heavy Industries
-
-          "H" for help, any other key to start
+D>
+D>             +--------------------------------------------------+
+D>             |                                                  |
+D>             |                  STEM v0.9.0                     |
+D>             |          An Altair 8800 File Manager             |
+D>             |        2026 Mattydyne Heavy Industries           |
+D>             |                                                  |
+D>             |     "H" for help, any other key to start         |
+D>             |                                                  |
+D>             +--------------------------------------------------+
+D>
 
 ```
 Pressing any key will load the directory of the current drive:
 ```
-Enumerating files in drive X
+Listing of drive A: (total of 31 files, 0  tagged)
 
-ASM     .COM
-DEMO    .ASM
-DEMO    .COM
-CLEAR   .ASM
-L80     .COM
-LOAD    .COM
-M80     .COM
-MAC     .COM
-GF      .TXT
-STEM    .ASM
-STEM    .PRN
-STEM    .HEX
-STEM    .COM
+[ ]LOOP.BAS      [ ]DEMO.COM      [ ]TETRIS.COM    [ ]VIBE.COM      [ ]DUMP.COM
+[ ]XSUB.COM      [ ]SNAKE.COM     [ ]LS.COM        [ ]RAINBOW.BAS   [ ]SURVEY.COM
+[ ]ONBOARD.COM   [ ]FONT.BAS      [ ]LOVEME.BAS    [ ]CLEAR.COM     [ ]LUNAR.BAS
+[ ]PICO.COM      [ ]WEATHER.COM   [ ]MBASIC.COM    [ ]PIP.COM       [ ]GAME.COM
+[ ]CHAT.COM      [ ]CHAT.SYS      [ ]FORMAT.COM    [ ]OTHELLO.COM   [ ]STARTRK.BAS
+[ ]CHAT.CFG      [ ]TICTAK.BAS    [ ]DISKRW.BAS    [ ]BREAKOUT.COM  [ ]STARINS.BAS
+[ ]ED.COM
 
-All done!  Final file count: 13
 
-D>
+
+
+
+
+
+
+
+
+Currently selected file (N/P-next/previous,Space-tag/untag): LOOP.BAS
+Command(D-delete,C-copy,T-display,R-rename,H-help,X-exit)? 
 ```
