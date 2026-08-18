@@ -39,9 +39,6 @@
 ; SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 ;****************************************************
 
-; Most of the following is just boiler plate, common
-; definitions, etc.
-
 ;****************************************************
 ; Entry point for FDOS, BIOS, CP/M system calls
 ;****************************************************
@@ -103,7 +100,7 @@ dma1    equ     0080h           ; first DMA area 128 bytes
 ;*****************************************************
 CR      equ     0dh             ; carriage return
 LF      equ     0ah             ; line feed
-fcblen  equ     36              ; byte size of File Control Block
+fcblen  equ     32              ; byte size of File Control Block
 fnbflen equ     452             ; length of filename buffer
 fnlen   equ     11              ; length of 8.3 filename (8+3)
 finflen equ     15              ; length of file info struct (8+3 name + 4 bytes)
@@ -259,10 +256,41 @@ tag5:
 uidel:
         cpi     'D'             ; Delete file(s)?
         jnz     uitype          ; Nope, go check for type contents
+        mvi     a,0             ; zero flag
+        sta     allflag         ; store it
         call    cnttags         ; get count of tagged files
-        ora     a               ; is it zero?
-        jnz     del1            ; no? go do tagged stuffs
+        cpi     0               ; is it zero?
+        jnz     dels1           ; no? go start deleting
+        mvi     d,5             ; line 5
+        mvi     e,16            ; column 17
+        mvi     a,5             ; 5 blank lines
+        call    flower          ; draw a flower box
+        mvi     d,7             ; line 7
+        mvi     e,24            ; column 24
+        call    setcur          ; put cursor there
+        lxi     d,uibold        ; make next text BOLD
+        mvi     c,strout        ; print
+        call    sys             ; syscall
+        lxi     d,delser        ; "Tag files"... message
+        mvi     c,strout        ; print it
+        call    sys             ; syscall
+        lxi     d,uireset       ; back to normal text
+        mvi     c,strout        ; print
+        call    sys             ; syscall
+        mvi     d,8             ; line 7
+        mvi     e,28            ; column 28
+        call    setcur          ; put cursor there
+        lxi     d,contmsg       ; "Press any key"... message
+        mvi     c,strout        ; print it
+        call    sys             ; syscall
+        mvi     c,conin         ; wait for key keypress
+        call    sys             ; syscall
+        jmp     usrlp0          ; redraw all
 dels1:
+        call    itertgs         ; get the next tagged file
+        cpi     0ffh            ; 0xff means no more tagged files
+        jz      usrlp0          ; all done
+delbox:
         mvi     d,5             ; line 5
         mvi     e,16            ; column 16
         mvi     a,4             ; 4 blank lines
@@ -274,22 +302,27 @@ dels1:
         mvi     c,strout        ; print it
         call    sys             ; syscall
         call    prnname         ; print file name
-        lxi     d,uichyn        ; Yes/No prompt
+        lda     allflag         ; user previously said "all"?
+        ora     a               ; check for non-zero
+        jnz     dels2           ; yup, go delete next
+        lxi     d,uichyna       ; Yes/No/ALL prompt
         mvi     c,strout        ; print
         call    sys             ; syscall
         call    cin2uppr        ; get user choice
         cpi     'N'             ; user said nope
-        jz      usrlp0          ; redraw whole display
+        jz      dels1           ; check next file
         cpi     'Y'             ; user said yup
         jz      dels2           ; oboy, here we go
-        jmp     dels1           ; something else, prompt again
+        cpi     'A'             ; yes to all!
+        jnz     delbox          ; go ask again
+        mvi     a,0ffh          ; set flag
+        sta     allflag         ; save it for next file
 dels2:
         call    bldfcb          ; set up a file control block
         lxi     d,fcb1          ; point to the FCB1
         mvi     c,fdel          ; syscall number to delete file
         call    sys             ; do the syscall
-del1:
-        jmp     usrlp0
+        jmp     dels1           ; probably need some error handling here!!
 
 uitype:
         cpi     'T'
@@ -1500,6 +1533,8 @@ uibold  db      01bh,'[1m$'
 uireset db      01bh,'[0m$'
 uistr1  db      'Currently selected file (N/P-next/previous,Space-tag/untag): $'
 uistr2  db      'Command(D-delete,C-copy,T-display,R-rename,H-help,X-exit)? $'
+delser  db      'Tag one or more files for deletion!$'
+contmsg db      'Press any key to continue$'
 delmsg  db      'Delete file $'
 uichyn  db      ' (Y/N)? $'
 uichyna db      ' (Y/N/A)? $'
@@ -1534,7 +1569,8 @@ dpbal0  ds      1               ; disk parameter block - reserved blocks
 dpbal1  ds      1               ; disk parameter block - reserved blocks
 dpbcks  ds      2               ; disk parameter block - directory check vector size
 dpboff  ds      2               ; disk parameter block - count of reserved tracks at beginning
-fcb2    ds      fcblen          ; another FCB for file operations
+fcb2    ds      fcblen+1        ; another FCB for file operations
+allflag ds      1               ; flag to indicate "ALL" files
 fcount  ds      1               ; file count addr
 flsel   ds      1               ; selected file number
 flwrtmp ds      1               ; temporary storage for flower box
