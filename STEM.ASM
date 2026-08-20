@@ -155,6 +155,8 @@ tagcnt  equ     maxfls/8+1      ; number of tag bytes in array
         mvi     c,conin         ; wait for keypress
         call    sys             ; waiting, key will be in A
 
+        call    tstdrvs         ; "log" all hardware drives, just to check validity
+
         ; start of main loop.  Entering at 'usrlp0' will result in a total
         ; re-read of filenames and screen redraw.  Entering at 'uinext' will
         ; keep existing tags and files
@@ -587,6 +589,29 @@ dbgl2:
         pop     d               ;
         pop     h               ;
         ret
+
+;
+; tstdrvs
+tstdrvs:
+        lxi     d,schfcb        ;
+        lxi     h,fcb1          ;
+        lxi     b,fcblen        ;
+        call    memcpy          ;
+        mvi     a,1             ;
+        sta     drvtmp          ;
+tstd1:
+        lda     drvtmp          ;
+        lxi     d,fcb1          ;
+        stax    d               ;
+        mvi     c,srchf         ;
+        call    sys             ;
+        lda     drvtmp          ;
+        inr     a               ;
+        sta     drvtmp          ;
+        cpi     4               ;
+        rz                      ;
+        jmp     tstd1           ;
+
 
 
 ;*************************************************
@@ -1470,6 +1495,7 @@ first:
         mvi     c,getdsk        ; get currently logged-in disk
         call    sys             ; syscall
         inr     a               ; drive A=1, etc.
+        lxi     d,fcb1          ; fcb in D/E for syscall
         sta     fcb1            ; drive is first byte in FCB:
         mvi     c,srchf         ; search first file function
         call    sys             ; call CP/M, result in A
@@ -1778,7 +1804,6 @@ prnui:
         lxi     d,uistr2        ; second UI line
         mvi     c,strout        ; print string
         call    sys             ; let cpm print it
-xret:
         pop     h               ;
         pop     d               ;
         pop     b               ;
