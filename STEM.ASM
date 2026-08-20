@@ -154,8 +154,7 @@ tagcnt  equ     maxfls/8+1      ; number of tag bytes in array
         call    sys             ; call the system function to print string
         mvi     c,conin         ; wait for keypress
         call    sys             ; waiting, key will be in A
-
-        call    tstdrvs         ; "log" all hardware drives, just to check validity
+        call    tstdrvs         ; "log in" all hardware drives, just to check validity
 
         ; start of main loop.  Entering at 'usrlp0' will result in a total
         ; re-read of filenames and screen redraw.  Entering at 'uinext' will
@@ -560,10 +559,11 @@ cleanup:
 ;
 ; prnvars
 prnvars:
-        push    h               ;
-        push    d               ;
-        push    b               ;
-        push    psw             ;
+        push    h               ; h=sp+7, l=sp+6
+        push    d               ; d=sp+5, e=sp+4
+        push    b               ; b=sp+3, c=sp+2
+        push    psw             ; psw=sp, a=sp+1
+        rst     7
         mvi     d,2             ;
         mvi     e,1             ;
         call    rstline         ;
@@ -584,6 +584,23 @@ dbgl1:
         inx     h               ;
         jmp     dbgl1           ;
 dbgl2:
+        mvi     a,' '           ;
+        call    pchar           ;
+        call    pchar           ;
+        lxi     h,newstk        ;
+        lxi     b,-256          ;
+        dad     b               ;
+        call    prn16           ;
+        mvi     a,'/'           ;
+        call    pchar           ;
+        lhld    06h             ;
+        lxi     b,-256          ;
+        dad     b               ;
+        call    prn16           ;
+        mvi     a,'K'           ;
+        call    pchar           ;
+        mvi     a,'B'           ;
+        call    pchar           ;
         pop     psw             ;
         pop     b               ;
         pop     d               ;
@@ -592,25 +609,27 @@ dbgl2:
 
 ;
 ; tstdrvs
+; Try to find a file on the first 4 drives.  This will "log"
+; them in CP/M, so that they show up in the "logged in vector"
 tstdrvs:
-        lxi     d,schfcb        ;
-        lxi     h,fcb1          ;
-        lxi     b,fcblen        ;
-        call    memcpy          ;
-        mvi     a,1             ;
-        sta     drvtmp          ;
+        lxi     d,schfcb        ; point to the "find any file" fcb template
+        lxi     h,fcb1          ; point to the default file control block
+        lxi     b,fcblen        ; length of FCB
+        call    memcpy          ; copy template to default FCB
+        mvi     a,1             ; set drive 1 (A)
+        sta     drvtmp          ; save that for now
 tstd1:
-        lda     drvtmp          ;
-        lxi     d,fcb1          ;
-        stax    d               ;
-        mvi     c,srchf         ;
-        call    sys             ;
-        lda     drvtmp          ;
-        inr     a               ;
-        sta     drvtmp          ;
-        cpi     4               ;
-        rz                      ;
-        jmp     tstd1           ;
+        lda     drvtmp          ; get current drive select
+        lxi     d,fcb1          ; point to default FCB
+        stax    d               ; store drive number in byte 0
+        mvi     c,srchf         ; syscall function to find file
+        call    sys             ; do the syscall
+        lda     drvtmp          ; go back and get the drive number
+        inr     a               ; increment
+        sta     drvtmp          ; save it
+        cpi     4               ; is it 4 yet?
+        rz                      ; if so, we're done; return to caller
+        jmp     tstd1           ; go search on next drive
 
 
 
@@ -629,6 +648,31 @@ stkchk:
         call    memcmp          ; compare buffers
         ret                     ; all done
 
+;
+; tstdrvs
+; Try to find a file on the first 4 drives.  This will "log"
+; them in CP/M, so that they show up in the "logged in vector"
+tstdrvs:
+        lxi     d,schfcb        ; point to the "find any file" fcb template
+        lxi     h,fcb1          ; point to the default file control block
+        lxi     b,fcblen        ; length of FCB
+        call    memcpy          ; copy template to default FCB
+        mvi     a,1             ; set drive 1 (A)
+        sta     drvtmp          ; save that for now
+tstd1:
+        lda     drvtmp          ; get current drive select
+        lxi     d,fcb1          ; point to default FCB
+        stax    d               ; store drive number in byte 0
+        mvi     c,srchf         ; syscall function to find file
+        call    sys             ; do the syscall
+        lda     drvtmp          ; go back and get the drive number
+        inr     a               ; increment
+        sta     drvtmp          ; save it
+        cpi     4               ; is it 4 yet?
+        rz                      ; if so, we're done; return to caller
+        jmp     tstd1           ; go search on next drive
+
+;
 ; isdskok
 ; Check if selected disk is online
 ; IN:
@@ -831,7 +875,7 @@ phex:
 cin2uppr:
         push    b               ;
         push    d               ;
-        push    h
+        push    h               ;
         mvi     c,conin         ; code for console in
         call    sys             ; do the syscall
         cpi     'a'             ; is char greater or equal to lowercase a?
@@ -989,7 +1033,7 @@ b2asc4:
 ; flower
 ; Print a "flower box" on the screen
 ; IN
-;       A - number of rows
+;       A - number of rows + 1
 ;       D - start line
 ;       D - start col
 flower:
@@ -1006,7 +1050,6 @@ flower:
         cpi     0               ; initial check
 flwr1:
         jz      flwr2           ; draw bottom line
-        dad     sp              ; get stack pointer H/L
         lxi     h,3             ; H/L to 3 (position where D was pushed)
         dad     sp              ; point to "pushed D"
         mov     d,m             ; get original D (line number)
@@ -1023,7 +1066,6 @@ flwr1:
         sta     flwrtmp         ; save updated line count
         jnz     flwr1           ;
 flwr2:
-        dad     sp              ; get stack pointer H/L
         lxi     h,3             ; H/L to 3 (position where D was pushed)
         dad     sp              ; point to "pushed D"
         mov     d,m             ; get original D (line number)
