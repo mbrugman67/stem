@@ -100,12 +100,11 @@ dma1    equ     0080h           ; first DMA area 128 bytes
 ;*****************************************************
 CR      equ     0dh             ; carriage return
 LF      equ     0ah             ; line feed
-fcblen  equ     32              ; byte size of File Control Block
+fcblen  equ     34              ; byte size of File Control Block
 fnbflen equ     452             ; length of filename buffer
 fnlen   equ     11              ; length of 8.3 filename (8+3)
-finflen equ     15              ; length of file info struct (8+3 name + 4 bytes)
-dspace  equ     17              ; spacing between filenames in list
-dsmax   equ     77              ; when to wrap filename list
+dspace  equ     16              ; spacing between filenames in list
+dsmax   equ     71              ; when to wrap filename list
 strtrow equ     3               ; first row of file list
 maxfls  equ     70              ; max files in buffer
 tagcnt  equ     maxfls/8+1      ; number of tag bytes in array
@@ -115,32 +114,19 @@ tagcnt  equ     maxfls/8+1      ; number of tag bytes in array
 ; .org 100h - TPA area starts at 0x0100
 ;****************************************************
         org     0100h           ; entry point at 100 hex (TPA area)
-        lxi     b,canary        ; point to fixed canary value
-        lxi     d,stkcny        ; point to last 4 bytes under stack
-        ldax    b               ; read fixed byte
-        stax    d               ; write to canary
-        inx     b               ; increment
-        inx     d               ; increment
-        ldax    b               ; read fixed byte
-        stax    d               ; write to canary
-        inx     b               ; increment
-        inx     d               ; increment
-        ldax    b               ; read fixed byte
-        stax    d               ; write to canary
-        inx     b               ; increment
-        inx     d               ; increment
-        ldax    b               ; read fixed byte
-        stax    d               ; write to canary
+        lxi     d,canary        ; point to fixed canary value
+        lxi     h,stkcny        ; point to last 4 bytes under stack
+        lxi     b,4             ; 4 bytes of stack canary
+        call    memcpy          ; copy fixed data to mem just under stack
         lxi     h,0             ; zero H/L register pair
         dad     sp              ; get stack pointer from CCP to H/L
         shld    orgstk          ; save original stack pointer to memory
         lxi     sp,newstk       ; set stack pointer to our new stack
-        mvi     c,gdprarm       ; syscall code for get DPH address
-        call    sys             ; do the syscall
-        shld    dpbase          ; save it for later
+
+        ; Draw the "Welcome" header over whatever is on the screen
         mvi     d,5             ; flower box at line 5
         mvi     e,16            ; flower box at column 16
-        mvi     a,8             ; 8 blank lines in box
+        mvi     a,8             ; 7 blank lines in box
         call    flower          ; print a flower box
         mvi     d,7             ; line 7
         mvi     e,35            ; column 35
@@ -169,6 +155,9 @@ tagcnt  equ     maxfls/8+1      ; number of tag bytes in array
         mvi     c,conin         ; wait for keypress
         call    sys             ; waiting, key will be in A
 
+        ; start of main loop.  Entering at 'usrlp0' will result in a total
+        ; re-read of filenames and screen redraw.  Entering at 'uinext' will
+        ; keep existing tags and files
 usrlp0:
         call    clrtags         ; clear all file tags
         call    listfls         ; load and list files
@@ -177,15 +166,19 @@ uinext:                         ; user UI interaction loop
         ora     a               ; stack is OK
         jz      cont            ; continue on
         call    crlf            ; newline
+        call    crlf            ; another newline
         lxi     d,errcan        ; stack error message
         mvi     c,strout        ; print it
         call    sys             ; print it
         jmp     cleanup         ; get outta here
 
 cont:
-        ;call    prnvars         ; print debug stuffs on line 2
+        call    prnvars         ; print debug stuffs on line 2
         call    prnui           ; print user interface info & menu
         call    cin2uppr        ; get user input (force to uppercase)
+
+        ; Move file selection to next file.  Wraps around to first file
+        ; when current selected is last
         cpi     'N'             ; Next file?
         jnz     uiprev          ; nope, check for previous file
         lda     flsel           ; get selected file
@@ -202,6 +195,9 @@ uinxt2:
         lxi     h,flsel         ; wrap selected file variable
         mvi     m,0             ; back to file zero
         jmp     uinext          ; next UI interaction
+
+        ; Move file selection to previous file.  Wraps around to last
+        ; file when current is first file
 uiprev:
         cpi     'P'             ; "P" for previous file
         jnz     uitag           ; nope, check for tag/untag
@@ -216,6 +212,11 @@ uiprv2:
         dcr     a               ; zero-based count
         sta     flsel           ; save it as selection
         jmp     uinext          ; next UI interaction
+
+        ; handle file tagging.  When the 'space' key is pressed, the
+        ; current selected file tag status is toggled.  Tags are stored
+        ; in a bitmap (an array of bytes where each bit represents one
+        ; file)
 uitag:
         cpi     ' '             ; do tag/untag?
         jnz     uidel           ; nope, check for delete
@@ -253,38 +254,21 @@ tag5:
         call    pchar           ; print it
         jmp     uinext          ; next UI interaction
 
+        ; Delete all tagged files.  The first file is displayed with a prompt
+        ; to "delete yes/no/all".  If 'no', then go to the next tagged file,
+        ; if yes, then delete and go to next tagged file.  If 'all', then
+        ; delete all remaining tagged files with no more prompts.  Danger, Will
+        ; Robinson!!
 uidel:
         cpi     'D'             ; Delete file(s)?
-        jnz     uitype          ; Nope, go check for type contents
+        jnz     uicopy          ; Nope, go check file copy
         mvi     a,0             ; zero flag
         sta     allflag         ; store it
         call    cnttags         ; get count of tagged files
         cpi     0               ; is it zero?
         jnz     dels1           ; no? go start deleting
-        mvi     d,5             ; line 5
-        mvi     e,16            ; column 17
-        mvi     a,5             ; 5 blank lines
-        call    flower          ; draw a flower box
-        mvi     d,7             ; line 7
-        mvi     e,24            ; column 24
-        call    setcur          ; put cursor there
-        lxi     d,uibold        ; make next text BOLD
-        mvi     c,strout        ; print
-        call    sys             ; syscall
-        lxi     d,delser        ; "Tag files"... message
-        mvi     c,strout        ; print it
-        call    sys             ; syscall
-        lxi     d,uireset       ; back to normal text
-        mvi     c,strout        ; print
-        call    sys             ; syscall
-        mvi     d,8             ; line 7
-        mvi     e,28            ; column 28
-        call    setcur          ; put cursor there
-        lxi     d,contmsg       ; "Press any key"... message
-        mvi     c,strout        ; print it
-        call    sys             ; syscall
-        mvi     c,conin         ; wait for key keypress
-        call    sys             ; syscall
+        lxi     d,delser        ; error message for no files selected
+        call    perr            ; print the error message in a flower box
         jmp     usrlp0          ; redraw all
 dels1:
         call    itertgs         ; get the next tagged file
@@ -293,7 +277,7 @@ dels1:
 delbox:
         mvi     d,5             ; line 5
         mvi     e,16            ; column 16
-        mvi     a,4             ; 4 blank lines
+        mvi     a,4             ; 3 blank lines
         call    flower          ; draw a flower box
         mvi     d,7             ; line 7
         mvi     e,26            ; column 26
@@ -324,13 +308,170 @@ dels2:
         call    sys             ; do the syscall
         jmp     dels1           ; probably need some error handling here!!
 
+        ; Copy all tagged files.  User will be prompted for a new filename
+        ; for each file.  This can be on current drive if the new filename
+        ; is just entered like "newfile.txt", or on another drive if
+        ; specified (e.g., "b:newfile.txt").  If the destination already
+        ; exists, file will not be copied, and user will be prompted for a
+        ; new name.
+uicopy:
+        cpi     'C'             ; copy file?
+        jnz     uitype          ; nope, try for display contents
+        mvi     a,0             ; zero flag
+        sta     allflag         ; store it
+        call    cnttags         ; get count of tagged files
+        cpi     0               ; is it zero?
+        jnz     cpy1            ; no? go start copying
+        lxi     d,cpyser        ; error message for no files selected
+        call    perr            ; print the error message in a flower box
+        jmp     usrlp0          ; redraw all
+cpy1:
+        call    itertgs         ; get the next tagged file
+        cpi     0ffh            ; 0xff means no more tagged files
+        jz      usrlp0          ; all done
+cpybox:
+        mvi     d,5             ; line 5
+        mvi     e,16            ; column 16
+        mvi     a,4             ; 3 blank lines
+        call    flower          ; draw a flower box
+        mvi     d,7             ; line 7
+        mvi     e,26            ; column 26
+        call    setcur          ; put cursor there
+        lxi     d,cpymsg1       ; "Copy file"... message
+        mvi     c,strout        ; print it
+        call    sys             ; syscall
+        call    prnname         ; print file name
+        lxi     d,uichyn        ; Yes/No
+        mvi     c,strout        ; print
+        call    sys             ; syscall
+        call    cin2uppr        ; get user choice
+        cpi     'N'             ; user said nope
+        jz      cpy1            ; check next file
+        cpi     'Y'             ; user said yup
+        jz      cpy2            ; oboy, here we go
+        jmp     cpybox          ; something else
+cpy2:
+        call    bldfcb          ; set up a file control block for source file
+        lxi     d,blnkfcb       ; blank FCB, ready for filename (src)
+        lxi     h,fcb2          ; get FCB 2 address (dst)
+        lxi     b,fcblen        ; set length
+        call    memcpy          ; copy blank FCB data to FCB2
+        mvi     d,5             ; line 5
+        mvi     e,16            ; column 16
+        mvi     a,6             ; 5 blank lines
+        call    flower          ; draw a flower box
+        mvi     d,7             ; line 7
+        mvi     e,29            ; column 29
+        call    setcur          ; put cursor there
+        lxi     d,cpymsg1       ; "Copy file"... message
+        mvi     c,strout        ; print it
+        call    sys             ; syscall
+        call    prnname         ; print file name
+        mvi     d,9             ; line 7
+        mvi     e,22            ; column 22
+        call    setcur          ; put cursor there
+        lxi     d,cpymsg2       ; "new name"... message
+        mvi     c,strout        ; print it
+        call    sys             ; syscall
+        call    getfnm          ; get filename from user
+        ora     a               ; check return code
+        jz      cpy3            ; good filename
+        lxi     d,badfnm        ; bad filename message
+        call    perr            ; print the error
+        jmp     cpybox          ; re-prompt for name
+cpy3:
+        call    bldfcb          ; set up source file control block
+        lxi     h,fcb2          ; start setting up dest FCB (dst)
+        lxi     d,blnkfcb       ; default "blank" FCB (src)
+        lxi     b,fcblen        ; FCB length
+        call    memcpy          ; copy default to dest FCB
+        lxi     d,usrfnm        ; point to user entered filenamene (src)
+        lxi     h,fcb2+1        ; name startes at byte 1 (dst)
+        lxi     b,fnlen         ; copy count = filename length
+        call    memcpy          ; copy user filename into dest FCB
+        lxi     d,fcb2          ; point to dest FCB1
+        mvi     c,fopen         ; syscall code for open file
+        call    sys             ; try to open the file
+        cpi     0ffh            ; 255 means file does not exist.  Good!
+        jnz     cpyexst         ; go error for destination already exists
+        lxi     d,fcb1          ; point to source file
+        mvi     c,fopen         ; try to open it
+        call    sys             ; hey FDOS - go open the file!
+        cpi     0ffh            ; 255 means unable to open the file :/
+        jz      cpyofl          ; jump to open fail
+        lxi     d,fcb2          ; point to dest FCB
+        mvi     c,fmake         ; syscal to make file
+        call    sys             ; hey FDOS, one more time!
+        cpi     0ffh            ; 255 means unable to create dest file
+        jz      cpydfl          ; error message, close source file
+        xra     a               ; zero A reg
+        sta     eofflag         ; save as EOF flag
+        lxi     h,0             ; zero H/L register set
+        shld    blkcnt          ; save it to block count
+cpy4:                           ; FILE COPY HAPPENS THROUGH DMA BLOCK at 0x0080
+        lxi     d,fcb1          ; source file
+        mvi     c,rdseq         ; read a block function
+        call    sys             ; read the block
+        ora     a               ; check for end of file (any non-zero result)
+        jz      cpy5            ; go clean up
+        lxi     d,fcb2          ; destination file
+        mvi     c,wrseq         ; write block function
+        call    sys             ; write the block
+        lhld    blkcnt          ; get block counter
+        inx     h               ; increment it
+        shld    blkcnt          ; save it
+        jmp     cpy4            ; back for next block
+cpy5:
+        lxi     d,fcb1          ; source file
+        mvi     c,fclose        ; close function
+        call    sys             ; go do it
+        lxi     d,fcb2          ; dest file
+        mvi     c,fclose        ; close function
+        call    sys             ; go do it
+        mvi     d,5             ; line 5
+        mvi     e,16            ; column 16
+        mvi     a,4             ; 3 blank lines
+        call    flower          ; flower box
+        mvi     d,7             ; line 7
+        mvi     e,25            ; column 25
+        call    setcur          ; cursor goes there
+        lhld    blkcnt          ; get the block count
+        call    prn16           ; print that as a decimal
+        lxi     d,cpyok         ; ' blocks copied' message
+        mvi     c,strout        ; print string function
+        call    sys             ; syscall
+        mvi     c,conin
+        call    sys
+        jmp     cpy1            ; next tagged file
+cpyexst:
+        lxi     d,fcb2          ; make sure we're pointing to dest file
+        mvi     c,fclose        ; close bad existing destination file
+        call    sys             ; syscall
+        lxi     d,cpyeer        ; file exists message
+        call    perr            ; error display
+        jmp     cpybox          ; back to prompt file again
+cpyofl:
+        lxi     d,cpysr1        ; "Unable to open source..." msg
+        call    perr            ; display error message
+        jmp     cpybox          ; go try again
+cpydfl:
+        lxi     d,fcb1          ; point to source file
+        mvi     d,fclose        ; close syscall
+        call    sys             ; go close it
+        lxi     d,cpyder        ; "Unable to open source..." msg
+        call    perr            ; display error message
+        jmp     cpybox          ; go try again
+
+
+
 uitype:
-        cpi     'T'
-        jnz     uiren
+        cpi     'T'             ; display file?
+        jnz     uiren           ; nope, try rename next
+
 
 uiren:
-        cpi     'R'
-        jnz     uihelp
+        cpi     'R'             ; rename file?
+        jnz     uihelp          ; nope, try
 
 uihelp:
         cpi     'H'
@@ -351,13 +492,18 @@ uihlp2:
         call    sys
         jmp     usrlp0
 
+        ; "Log into another disk" - in other words, change disk.  User
+        ; is prompted for the new disk.  If disk is "OK", then the
+        ; files will be listed for that drive.  Otherwise, a "disk not
+        ; available" kind of error will be displayed, and the current
+        ; disk will be re-listed.
 uilog:
         cpi     'L'             ; Log disk?
         jnz     uiexit          ; Nope - check for exit
 uilog1:
         mvi     d,5             ; line 5
         mvi     e,16            ; column 16
-        mvi     a,4             ; 4 blank lines
+        mvi     a,4             ; 3 blank lines
         call    flower          ; draw a flower box
         mvi     d,7             ; line 7
         mvi     e,26            ; column 26
@@ -377,27 +523,20 @@ uilog1:
         jz      uilog2          ; it is not!
         mvi     c,seldsk        ; select disk
         call    sys             ; syscall
-        jmp     usrlp0          ;
+        jmp     usrlp0          ; go read new disk and list files
 uilog2:
-        mvi     d,5             ; line 5
-        mvi     e,16            ; column 16
-        mvi     a,4             ; 4 blank lines
-        call    flower          ; draw a flower box
-        mvi     d,7             ; line 7
-        mvi     e,19            ; column 26
-        call    setcur          ; put cursor there
-        lxi     d,logerr        ; error message
-        mvi     c,strout        ; print it
-        call    sys             ; do the syscall
-        mvi     d,7             ; line 7
-        mvi     e,24            ; move to placeholder for drive letter
-        call    setcur          ; set cursor there
-        lda     drvtmp          ; get the drive letter from user input
-        call    pchar           ; drop it into message
-        mvi     c,conin         ; wait for input
-        call    sys             ; syscall
-        jmp     usrlp0          ; go back to file list
+        lxi     d,logerr        ; Error message
+        lxi     h,tmpmsg        ; temporary message buffer
+        lxi     b,31            ; length of error message
+        call    memcpy          ; cpy msg into buffer
+        lda     drvtmp          ; get user's drive choice
+        lxi     d,tmpmsg+10     ; 10 characters in is placeholder for disk ID
+        stax    d               ; store the drive letter there
+        lxi     d,tmpmsg        ; get the start of the buffer again
+        call    perr            ; display it
+        jmp     usrlp0          ; go back and re-read current disk
 
+        ; go back to CP/M.
 uiexit:
         cpi     'X'
         jz      cleanup
@@ -457,40 +596,21 @@ dbgl2:
 ;stkchk
 ; Check integrity of stack (look for a blown stack)
 ; OUT:
-;       A-255 stack was blown
+;       A - 255 if stack was blown, 0 if stack OK
 stkchk:
-        lxi     b,canary        ; get fixed value address
+        lxi     d,canary        ; get fixed value address
         lxi     h,stkcny        ; get last 4 bytes under stack
-        ldax    b               ; get byte
-        cmp     m               ; compare
-        jnz     stkblwn         ; stack is corrupt
-        inx     b               ; next byte
-        inx     h               ; next byte
-        ldax    b               ; get byte
-        cmp     m               ; compare
-        jnz     stkblwn         ; stack is corrupt
-        inx     b               ; next byte
-        inx     h               ; next byte
-        ldax    b               ; get byte
-        cmp     m               ; compare
-        jnz     stkblwn         ; stack is corrupt
-        inx     b               ; next byte
-        inx     h               ; next byte
-        ldax    b               ; get byte
-        cmp     m               ; compare
-        jnz     stkblwn         ; stack is corrupt
-        mvi     a,0             ; stack is good
+        lxi     b,4             ; 4 bytes to compare
+        call    memcmp          ; compare buffers
         ret                     ; all done
-stkblwn:
-        mvi     a,0ffh          ; set flag
-        ret
 
 ; isdskok
 ; Check if selected disk is online
 ; IN:
 ;       A - disk number (A=0, B=1, etc)
 ; OUT:
-;       A - zero means disk offline
+;       A - zero means disk offline, any
+;           non-zero means disk online and OK
 isdskok:
         push    b               ;
         push    h               ;
@@ -520,21 +640,117 @@ isdsk3:
         pop     b               ;
         ret
 
+;
+; getfnm
+; Get a filename from the user
+; Result placed in buffer at USRFNM
+; OUT:
+;       A - 0=good filename, 0xff bad
+getfnm:
+        push    b               ;
+        push    d               ;
+        push    h               ;
+        lxi     h,usrfnm        ; get address of fn buffer
+        mvi     b,' '           ; fill with spaces
+        lxi     d,fnlen         ; for filename number of bytes
+        call    memset          ; go do it
+        lxi     d,usrfnm+fnlen  ; special thing here
+        mvi     a,'$'           ; drop a dollar sign at the end of the buffer
+        stax    d               ; so we can straight up print it with strout
+        mvi     c,8             ; char counter
+        lxi     h,usrfnm        ; point to start of filename buffer
+gfn1:
+        call    cin2uppr        ; get user input
+        cpi     '.'             ; early "dot"?
+        jz      gfn4            ; go get the extension
+        cpi     8               ; user hit <BACKSPACE>?
+        jnz     gfn2            ; nope, go place char in buffer
+        mov     a,c             ; get char position
+        cpi     8               ; have any chars been entered?
+        jz      gfn1            ; ignore the backspace
+        inr     c               ; revert a char
+        dcx     h               ; back up the buffer
+        mvi     m,' '           ; put the space back, too
+        jmp     gfn1            ; go try again
+gfn2:
+        mov     m,a             ; drop it into filename
+        inx     h               ; next byte
+        dcr     c               ; next char, sets zero flag
+        jnz     gfn1            ; Done with basename, get extension
+gfn3:
+        mvi     a,'.'           ; force a separator
+        call    pchar           ; and print it
+gfn4:
+        lxi     h,usrfnm+8      ; start of extension
+        mvi     c,3             ; extension length
+gfn5:
+        call    cin2uppr        ; get input
+        cpi     CR              ; user hit <ENTER>?
+        jz      gfn6            ; go validate
+        cpi     08h             ; user hit <BACKSPACE>?
+        jnz     gfn6            ; nope, add extension character
+        mov     a,c             ; get char position
+        cpi     3               ; have any chars been entered?
+        jz      gfn5            ; ignore the backspace
+        inr     c               ; revert a char
+        dcx     h               ; back up the buffer
+        mvi     m,' '           ; put the space back, too
+        jmp     gfn5            ; go try again
+gfn6:
+        mov     m,a             ; copy to FCB2
+        inx     h               ; next byte
+        dcr     c               ; next ext, sets zero flag
+        jnz     gfn5            ; loop
+gfn7:
+        mvi     b,0fh          ; assume a bad name
+gfnval:
+        lxi     h,usrfnm        ; time to start validating
+        mov     a,m             ; get first character
+        cpi     'A'             ; is char less than uppercase A?
+        jm      gfnret          ; filename must start with alpha
+        cpi     'Z'             ; is char greater than uppercase Z?
+        jp      gfnret          ; again, bad!
+        inx     h               ; next char
+        mvi     c,10            ; seven more chars + 3 ext to go
+gfnv2:
+        mov     a,m             ; get next char
+        cpi     ' '             ; space is OK (ok, this can be a problem to check...)
+        jz      gfnv3           ; spaces allowed between name and ext
+        cpi     'Z'+1           ; can't be greater than capital Z
+        jp      gfnret          ; return with error
+        cpi     'A'             ; but can be between A and Z
+        jp      gfnv3           ; return with error
+        cpi     '9'+1           ; at this point, can't be greater than "9"
+        jp      gfnret          ; return with error
+        cpi     '0'             ; or less than zero (sorry, B.E.E.)
+        jm      gfnret          ; return with error
+gfnv3:
+        inx     h               ; next char
+        dcr     c               ; decrement count
+        jnz     gfnv2           ; next check
+        mvi     b,0             ; if we got this far, name is good!
+gfnret:
+        mov     a,b             ; get return code for exit
+        pop     h               ;
+        pop     d               ;
+        pop     b               ;
+        ret
+;
 ; pchar
 ; print a character to console out
 ; IN:
 ;	reg A - character to print
 ; all registers preserved
 pchar:
-        push    h               ; save registers that we'll
-        push    d               ; be using
+        push    h               ;
+        push    d               ;
         push    b
         mvi     c,conout        ; CP/M function for char out
         mov     e,a             ; char needs to be in Reg e
         call    sys             ; call CP/M to print
         pop     b               ;
-        pop     d               ; restore registers
-        pop     h               ; that were used
+        pop     d               ;
+        pop     h               ;
         ret
 
 ;
@@ -588,7 +804,9 @@ phex:
 ; RETURNS:
 ;       byte in A
 cin2uppr:
-        push    b               ; save B/C pair
+        push    b               ;
+        push    d               ;
+        push    h
         mvi     c,conin         ; code for console in
         call    sys             ; do the syscall
         cpi     'a'             ; is char greater or equal to lowercase a?
@@ -597,7 +815,9 @@ cin2uppr:
         jp      c2udone         ; sure it, just return it
         ani     0dfh            ; mask off bit 5 (that's the difference between A and a, etc)
 c2udone:
-        pop     b               ; restore B/C
+        pop     h               ;
+        pop     d               ;
+        pop     b               ;
         ret                     ; and get outta here
 
 ;
@@ -608,9 +828,9 @@ c2udone:
 ; all registers preserved
 ;
 prn16:
-        push    h               ; save registers
-        push    b
-        push    d
+        push    h               ;
+        push    b               ;
+        push    d               ;
         mvi     b, 0            ; Used as a flag to skip printing leading zeroes
         lxi     d,-10000        ; ten thousands place
         call    pdec            ; go print it
@@ -623,9 +843,9 @@ prn16:
         mov     a,l             ; get remaining ones place
         adi     '0'             ; offset for ascii
         call    pchar           ; and print it
-        pop     d               ; restore registers
-        pop     b
-        pop     h
+        pop     d               ;
+        pop     b               ;
+        pop     h               ;
         ret
 
 ;
@@ -636,9 +856,9 @@ prn16:
 ; all registers preserved
 ;
 prn8:
-        push    h               ; save registers
-        push    b
-        push    d
+        push    h               ;
+        push    b               ;
+        push    d               ;
         mvi     h,0             ; zero upper byte
         mov     a,l             ; initial check for zero
         ora     a               ; is it zero?
@@ -655,9 +875,9 @@ prn81:
         adi     '0'             ; offset for ascii
 prn82:
         call    pchar           ; and print it
-        pop     d               ; restore registers
-        pop     b
-        pop     h
+        pop     d               ;
+        pop     b               ;
+        pop     h               ;
         ret
 
 ;
@@ -704,7 +924,7 @@ pdecr:
 ;       H/L - buffer pointer to put the bytes.  Buffer will
 ;             be incremented to the 'next' location
 byt2asc
-        push    d               ; save regs on entry
+        push    d               ;
         push    b               ;
         mvi     e,0             ; leading zero flag
         mvi     d,100           ; hundreds place first
@@ -736,8 +956,8 @@ b2asc4:
         adi     '0'             ; ascii bias
         mov     m,a             ; store it to buffer
         inx     h               ; increment buffer
-        pop     b               ; restore
-        pop     d               ; registers
+        pop     b               ;
+        pop     d               ;
         ret
 
 ;
@@ -798,55 +1018,92 @@ flwr2:
 ; memcpy
 ; memory copy from one buffer to another
 ; IN:
-;       A count to copy
-;       B/C source
-;       D/E destination
+;       B/C byte count
+;       D/E source
+;       H/L destination
 memcpy:
-        push    psw             ; save a/status register
-        push    h               ; save H/L pair (using l)
-        push    b               ; save addr of source
-        push    d               ; save addr of destination
-        mov     l,a             ; save count to L
-        cpi     0               ; initial compare, make sure there's
-mcploop:                        ; work to do
-        jz      mcpdone         ; done copying, clean up and return
-        ldax    b               ; get next byte from source
-        stax    d               ; save to destination
-        inx     b               ; next source
-        inx     d               ; next destination
-        dcr     l               ; decrement copy count (sets zero flag)
-        jmp     mcploop         ; check and do next byte
+        push    psw             ;
+        push    h               ;
+        push    b               ;
+        push    d               ;
+        mov     a,b             ; get upper byte of count
+        ora     c               ; or it with lower byte
+mcploop:
+        jz      mcpdone         ; all done when count is zero
+        ldax    d               ; get first source byte
+        mov     m,a             ; copy it to dest
+        inx     d               ; increment source
+        inx     h               ; increment destination
+        dcx     b               ; decrement count
+        mov     a,b             ; get upper byte of count
+        ora     c               ; or it with lower byte, sets Z flag
+        jmp     mcploop         ; go do next byte
 mcpdone:
-        pop     d               ; restore dst addr
-        pop     b               ; restore src addr
-        pop     h               ; restore H/L pair
-        pop     psw             ; resture A and status flags
+        pop     d               ;
+        pop     b               ;
+        pop     h               ;
+        pop     psw             ;
+        ret                     ; get outta here
+
+;
+; memcmp
+; compare two memory buffers
+; IN:
+;       B/C byte count
+;       D/E buffer 1
+;       H/L buffer 2
+; OUT:
+;       A - zero if buffers match
+memcmp:
+        push    h               ;
+        push    b               ;
+        push    d               ;
+        mov     a,b             ; get upper byte of count
+        ora     c               ; or it with lower byte
+mcloop:
+        jz      mcdone          ; all done when count is zero (A will have zero)
+        ldax    d               ; get first source byte
+        cmp     m               ; copy it to dest
+        jnz     mcdiff          ; they are different!!
+        inx     d               ; increment source
+        inx     h               ; increment destination
+        dcx     b               ; decrement count
+        mov     a,b             ; get upper byte of count
+        ora     c               ; or it with lower byte, sets Z flag
+        jmp     mcloop          ; go do next byte
+mcdiff:
+        mvi     a,0ffh          ; set a non-zero value to A for error
+mcdone:
+        pop     d               ;
+        pop     b               ;
+        pop     h               ;
         ret                     ; get outta here
 
 ;
 ; memset
 ; set a buffer to a fixed byte value.
-; THIS VERSION ONLY DOES UP TO 255 BYTES
 ; IN:
-;       A byte value to set buffer to
-;       B count of bytes to set
-;       D/E buff
+;       b byte value to set buffer to
+;       D/E count of bytes to set
+;       H/L buff
 memset:
+        push    h               ;
         push    b               ;
         push    d               ;
-        mov     c,a             ; save count
-        mov     a,b             ; move count for initial compare
-        cpi     0               ;
-        mov     a,c             ; get set value back
+        mov     a,d             ; get upper byte of count
+        ora     e               ; or it with lower byte
 mstloop:
         jz      mstdone         ; done setting, cleanup and return
-        stax    d               ; set addr to desired values
-        inx     d               ; next buffer address
-        dcr     b               ; decrement copy count
+        mov     m,b             ; set addr to desired value
+        inx     h               ; next buffer address
+        dcx     d               ; decrement copy count
+        mov     a,d             ; get upper byte of count
+        ora     e               ; or it with lower byte, sets Z flag
         jmp     mstloop
 mstdone:
-        pop     b               ; restore count
-        pop     d               ; restore addr
+        pop     b               ;
+        pop     d               ;
+        pop     h               ;
         ret                     ; get outta here
 
 ;
@@ -885,10 +1142,10 @@ cls:
 ;       D - line
 ;       E - col
 setcur:
-        push    psw             ; save A and PSW
-        push    b               ; save B/C pair
-        push    d               ; save D/E pair
-        push    h               ; save H/L pair
+        push    psw             ;
+        push    b               ;
+        push    d               ;
+        push    h               ;
         lxi     h,esctmp        ; get buffer for building sequence
         mvi     m,01bh          ; escape
         inx     h               ; next byte
@@ -906,10 +1163,10 @@ setcur:
         lxi     d,esctmp        ; back to start of buffer of CP/m
         mvi     c,strout        ; syscall for string out to the terminal
         call    sys             ; let CP/M do the thing
-        pop     h               ; restore H/L
-        pop     d               ; restore D/E
-        pop     b               ; restore B/C
-        pop     psw             ; restore A and PSW
+        pop     h               ;
+        pop     d               ;
+        pop     b               ;
+        pop     psw             ;
         ret                     ; bye
 
 ;
@@ -921,15 +1178,15 @@ rstline:
         push    h
         call    setcur          ; put cursor on correct line
         lxi     h,esctmp        ; get sequence buffer
-        mvi     m,01bh          ;
-        inx     h               ;
-        mvi     m,'['           ;
-        inx     h               ;
-        mvi     m,'2'           ;
-        inx     h               ;
-        mvi     m,'K'           ;
-        inx     h               ;
-        mvi     m,'$'           ;
+        mvi     m,01bh          ; start
+        inx     h               ;  building
+        mvi     m,'['           ;   an
+        inx     h               ;    ANSI
+        mvi     m,'2'           ;     escape
+        inx     h               ;     sequence
+        mvi     m,'K'           ;    to clear
+        inx     h               ;   currrent line
+        mvi     m,'$'           ; ^[2K
         mvi     c,strout        ; send it to the console
         lxi     d,esctmp        ;
         call    sys             ;
@@ -939,37 +1196,76 @@ rstline:
         ret
 
 ;
+; perr
+; Print error message in flower box.  One line of message
+; IN:
+;       D/E - address of error message
+perr:
+        push    b               ;
+        push    h               ;
+        push    d               ;
+        mvi     d,5             ; line 5
+        mvi     e,16            ; column 17
+        mvi     a,5             ; 4 blank lines
+        call    flower          ; draw a flower box
+        mvi     d,7             ; line 7
+        mvi     e,24            ; column 24
+        call    setcur          ; put cursor there
+        lxi     d,uibold        ; make next text BOLD
+        mvi     c,strout        ; print
+        call    sys             ; syscall
+        pop     d               ; get user's message
+        mvi     c,strout        ; print it
+        call    sys             ; syscall
+        lxi     d,uireset       ; back to normal text
+        mvi     c,strout        ; print
+        call    sys             ; syscall
+        mvi     d,8             ; line 7
+        mvi     e,28            ; column 28
+        call    setcur          ; put cursor there
+        lxi     d,contmsg       ; "Press any key"... message
+        mvi     c,strout        ; print it
+        call    sys             ; syscall
+        mvi     c,conin         ; wait for key keypress
+        call    sys             ; syscall
+        pop     h               ;
+        pop     b               ;
+        ret
+
+;
 ; clrtags
 ; Clear all tags
 clrtags:
-        push    psw
-        push    b
-        push    d
-        mvi     b,tagcnt        ; array of bytes of tags
-        lxi     d,tags          ; get the array of tags
-        mvi     b,tagcnt        ; number of bytes
-        mvi     a,0             ; value
-        call    memset          ; set them
-        pop     b
-        pop     d
-        pop     psw
+        push    psw             ;
+        push    b               ;
+        push    d               ;
+        push    h               ;
+        lxi     h,tags          ; get the array of tags
+        lxi     d,tagcnt        ; number of bytes
+        mvi     b,0             ; zero to reset them all
+        call    memset          ; reset them
+        pop     h               ;
+        pop     d               ;
+        pop     b               ;
+        pop     psw             ;
         ret
 
 ;
 ; settags
 ; Set all tags
 settags:
-        push    psw
-        push    b
-        push    d
-        mvi     b,tagcnt        ; array of bytes of tags
-        lxi     d,tags          ; get the array of tags
-        mvi     b,tagcnt        ; number of bytes
-        mvi     a,0ffh          ; value
+        push    psw             ;
+        push    b               ;
+        push    d               ;
+        push    h               ;
+        lxi     h,tags          ; get the array of tags
+        lxi     d,tagcnt        ; number of bytes
+        mvi     b,0ffh          ; 0xff to reset them all
         call    memset          ; set them
-        pop     b
-        pop     d
-        pop     psw
+        pop     h               ;
+        pop     d               ;
+        pop     b               ;
+        pop     psw             ;
         ret
 
 ;
@@ -1138,9 +1434,9 @@ bldfcb:
         push    b               ;
         push    d               ;
         push    h               ;
-        lxi     b,schfcb        ; set B/C to search value for find first
-        lxi     d,fcb1          ; set D/E to file control block 2
-        mvi     a,fcblen        ; 32 bytes to copy
+        lxi     d,schfcb        ; set D/E to search value for find first (src)
+        lxi     h,fcb1          ; set H/L to file control block 2 (dst)
+        lxi     b,fcblen        ; set B/C to byte count to copy
         call    memcpy          ; this sets up fcb1 with generic format
         mvi     c,getdsk        ; get current disk number (A=0, etc)
         call    sys             ; ask CP/M for it, return in A
@@ -1148,48 +1444,14 @@ bldfcb:
         sta     fcb1            ; first byte of fcb is drive number
         call    setfptr         ; flposn is now set to start of filename
         lhld    flposn          ; start of selected filename
-        mov     b,h             ;
-        mov     c,l
-        lxi     d,fcb1+1        ; start of FCB + 1
-        mvi     a,fnlen         ; 11 bytes in filename
+        xchg                    ; exchange value between H/L and D/E
+        lxi     h,fcb1+1        ; start of FCB
+        lxi     b,fnlen         ; 11 bytes in filename
         call    memcpy          ; copy filename into fcb1]
         pop     h               ;
         pop     d               ;
         pop     b               ;
         pop     psw             ;
-        ret
-
-;
-; pfsize
-; Print filesize
-; Prints decimal filesize (in KB)
-pfsize:
-        push    b               ;
-        push    d               ;
-        push    h               ;
-        call    bldfcb          ; build an FCB for the selected file
-        lxi     d,fcb1          ; point to it
-        mvi     c,fsize         ; syscal to get file size
-        call    sys             ; do the syscall
-        lxi     h,fcb1          ; H/L to fcb1
-        lxi     b,33            ; byte 33 is size in sectors
-        dad     b               ; so set H/L to that byte
-        mov     a,m             ; put it into A
-        ani     0f8h            ; mask off lower 3 bits
-        rar                     ; three right shifts
-        rar                     ; is divide by 8
-        rar                     ; (each sector is 128 bytes, 1/8 K)
-        mov     l,a             ; move to L register
-        call    prn8            ; print it at current location
-        mvi     a,'K'           ; print 'K'
-        call    pchar           ;
-        mvi     a,'B'           ; print 'B;
-        call    pchar           ;
-        mvi     a,' '           ; adda space
-        call    pchar           ;
-        pop     h               ;
-        pop     d               ;
-        pop     b               ;
         ret
 
 ;
@@ -1200,13 +1462,30 @@ pfsize:
 ;       B/C pair - address of file control block
 ;
 first:
-        lxi     b,schfcb        ; set B/C to search value for find first
-        lxi     d,fcb1          ; set D/E to file control block 2
-        mvi     a,fcblen        ; 32 bytes to copy
+
+        lxi     d,schfcb        ; set D/E to search value for find first (src)
+        lxi     h,fcb1          ; set H/L to file control block (dst)
+        lxi     b,fcblen        ; length of one fcb
         call    memcpy          ; copy search value to FCB1
+        mvi     c,getdsk        ; get currently logged-in disk
+        call    sys             ; syscall
+        inr     a               ; drive A=1, etc.
+        sta     fcb1            ; drive is first byte in FCB:
         mvi     c,srchf         ; search first file function
         call    sys             ; call CP/M, result in A
-        lxi     b,dma1          ; set address of FCB as DMA1
+        cpi     255             ; compare to 0xff - no file found
+        rz                      ; no file was found
+        rlc                     ; result in A is muliplied by 32 to get actual FCB addr
+        rlc                     ; do 5 left shifts on the A
+        rlc                     ; register,
+        rlc                     ; this multiplies the value in
+        rlc                     ; A by 32 to get offset of next FCB
+        lxi     h,0             ; load the H/L pair with the value
+        mov     l,a             ; in A
+        lxi     b,dma1          ; load B/C pair with base address of DMA
+        dad     b               ; H/L now contain address of new found FCB
+        mov     b,h             ; save that to
+        mov     c,l             ; B/C pair
         ret
 
 ;
@@ -1221,7 +1500,7 @@ nextf:
         call    sys             ; call CP/M, result in A
         cpi     255             ; compare to 0xff - no file found
         rz                      ; no file was found
-        rlc                     ;
+        rlc                     ; result in A is muliplied by 32 to get actual FCB addr
         rlc                     ; do 5 left shifts on the A
         rlc                     ; register,
         rlc                     ; this multiplies the value in
@@ -1233,11 +1512,6 @@ nextf:
         mov     b,h             ; save that to
         mov     c,l             ; B/C pair
         ret
-
-;
-; gtfinfo
-; Get file info - gets filesize, attributes, and user number
-
 
 ;
 ; enumdir
@@ -1261,12 +1535,13 @@ enumdir:
         jmp     enumret         ; we're all done here
 frstok:
         inx     b               ; B/C holds FCB1, filename starts at second byte
-        lhld    flposn          ; load value at flposn into H/L
-        xchg                    ; swap H/L into D/E
-        mvi     a,fnlen         ; set copy len to be 8+3 (file name + ext in FCB)
-        call    memcpy          ; copy filename to buffer\
+        mov     d,b             ; B/C to
+        mov     e,c             ; D/E
+        lhld    flposn          ; load value at flposn into H/L (dst)
+        lxi     b,fnlen         ; set copy len to be 8+3 (file name + ext in FCB)
+        call    memcpy          ; copy filename to buffer
         lhld    flposn          ; get the buffer pointer again
-        lxi     b,finflen       ; load B/C with data struct length
+        lxi     b,fnlen         ; load B/C with data struct length
         dad     b               ; add filename length to buffer pointer
         shld    flposn          ; save it
         lda     fcount          ; get file count
@@ -1277,12 +1552,13 @@ nxtfl:
         cpi     0ffh            ; no more files found
         jz      enumret         ; so break out of loop
         inx     b               ; B/C holds FCB1, filename starts at second byte
+        mov     d,b             ; move B/C
+        mov     e,c             ; D/E
         lhld    flposn          ; get next address of filename buffer into H/L
-        xchg                    ; swap that into D/E
-        mvi     a,fnlen         ; set copy len to be 8+3 (file name + ext in FCB)
+        lxi     b,fnlen         ; set copy len to be 8+3 (file name + ext in FCB)
         call    memcpy          ; copy filename to buffer
         lhld    flposn          ; get the buffer pointer again
-        lxi     b,finflen         ; load B/C with filename length
+        lxi     b,fnlen         ; load B/C with filename length
         dad     b               ; add filename length to buffer pointer
         shld    flposn          ; save it
         lda     fcount          ; get file count
@@ -1294,7 +1570,7 @@ nxtfl:
 enumful:
         mvi     d,5             ; line 5
         mvi     e,16            ; column 16
-        mvi     a,4             ; 4 blank lines
+        mvi     a,4             ; 3 blank lines
         call    flower          ; draw a flower box
         mvi     d,7             ; line 7
         mvi     e,20            ; column 20
@@ -1324,11 +1600,10 @@ setfptr:
         mov     b,a             ; save selected to B
         mvi     c,0             ; zero current file index
         lxi     h,flposn        ; get the pointer
-        mvi     h,0             ; zero it
-        mvi     l,0             ; zeroing
+        lxi     h,0             ; zero it
         lxi     d,flist         ; start of filename list buffer in D/E
         dad     d               ; set flposn pointer to be start of buffer
-        lxi     d,finflen       ; load D/E with 11 struct len
+        lxi     d,fnlen         ; load D/E with 11 struct len
 setfp1:
         mov     a,c             ; get current index
         cmp     b               ; is it the desired filename?
@@ -1348,7 +1623,10 @@ setfp2:
 ; prnname
 ; Print filename in human readible form
 ; Name to print will be the selected file number
-; store in variable FLSEL
+; stored in variable FLSEL.  CP/M stores files
+; with spaces and no 'dot'; for example:
+;   >FILE    TXT<
+; This routine will print that as >FILE.TXT<
 ;
 prnname:
         push    psw
@@ -1389,10 +1667,10 @@ prnnm4:
 ; selected file status
 ;
 fndisp
-        push    psw             ; save A and PSW
-        push    b               ; save B/C
-        push    d               ; save D/E
-        push    h               ; save H/L
+        push    psw             ;
+        push    b               ;
+        push    d               ;
+        push    h               ;
         lxi     h,flsel         ; get selected file number
         mvi     m,0             ; zero it out
         lda     fcount          ; get file count to a
@@ -1404,19 +1682,19 @@ fndisp
 fndlp:
         call    setcur          ; move cursor there
         mvi     a,'['           ; print
-        call    pchar           ;   [ ]
-        mvi     a,' '           ; to terminal
-        call    pchar           ; to hold
-        mvi     a,']'           ; and 'X'
-        call    pchar           ; inidicating selection
+        call    pchar           ;  [ ]
+        mvi     a,' '           ;   to terminal
+        call    pchar           ;    to hold
+        mvi     a,']'           ;   an 'X'
+        call    pchar           ;  indicating tag status
         call    prnname         ; print filename
         lda     flsel           ; get selected file number
         inr     a               ; and increment it
         sta     flsel           ; save it
         mov     a,e             ; get column start
-        adi     dspace          ; bump it up for next set of files
+        adi     dspace          ; increment for next column of files to the right
         mov     e,a             ; save it for now
-        cpi     dsmax           ; anything greater than 77 would be column 6
+        cpi     dsmax           ; did we increment into column 6?
         jm      fndlp1          ; nope, this is column 5 or less
         mvi     e,1             ; start over at column 1
         inr     d               ; next row
@@ -1424,10 +1702,10 @@ fndlp1:
         dcr     c               ; decrement file count, sets Z flag
         jnz     fndlp           ; go do next
 fnddone:
-        pop     h               ; restore H/L
-        pop     d               ; restore D/E
-        pop     b               ; restore B/C
-        pop     psw             ; restore A and PSW
+        pop     h               ;
+        pop     d               ;
+        pop     b               ;
+        pop     psw             ;
         ret                     ; all done
 
 ;
@@ -1436,8 +1714,7 @@ fnddone:
 ;
 listfls:
         call    cls             ; clear
-        call    enumdir         ; get the listing for the logged drive,
-                                ; names stored in buffer, not printed yet
+        call    enumdir         ; get the listing for the logged drive
         call    fndisp          ; formatted listing of filenames
         lda     flsel           ; reload selected file number
         mvi     a,0             ; and reset to zero
@@ -1449,12 +1726,12 @@ listfls:
 ; Print "user interface" section
 ;
 prnui:
-        push    psw             ; save A and PSW
-        push    b               ; save B/C
-        push    d               ; save D/E
-        push    h               ; save H/L
+        push    psw             ;
+        push    b               ;
+        push    d               ;
+        push    h               ;
         mvi     d,1             ; new cursor position, line 1
-        mvi     e,20            ; column 22
+        mvi     e,16            ; column 16
         call    rstline         ; clear current line,
         mvi     c,strout        ; print string
         lxi     d,fndstr1       ; "Listing of drive " message
@@ -1492,10 +1769,6 @@ prnui:
         mvi     c,strout        ; print
         call    sys             ; print it
         call    prnname         ; print selected filename
-        ;mvi     a,' '          ;
-        ;call    pchar          ;
-        ;call    pchar          ;
-        ;call    pfsize         ; print filesize
         lxi     d,uireset       ; clear formatting
         mvi     c,strout        ; print
         call    sys             ; print it
@@ -1506,10 +1779,10 @@ prnui:
         mvi     c,strout        ; print string
         call    sys             ; let cpm print it
 xret:
-        pop     h               ; restore H/L
-        pop     d               ; restore D/E
-        pop     b               ; restore B/C
-        pop     psw             ; restore A and PSW
+        pop     h               ;
+        pop     d               ;
+        pop     b               ;
+        pop     psw             ;
         ret                     ; all done
 
 ;***************************************************
@@ -1534,49 +1807,42 @@ uireset db      01bh,'[0m$'
 uistr1  db      'Currently selected file (N/P-next/previous,Space-tag/untag): $'
 uistr2  db      'Command(D-delete,C-copy,T-display,R-rename,H-help,X-exit)? $'
 delser  db      'Tag one or more files for deletion!$'
+cpyser  db      '   Tag one or more files to copy!$'
+cpyeer  db      '  DESTINATION FILE ALREADY EXISTS!$'
+cpysr1  db      '    UNABLE TO OPEN SOURCE FILE!$'
+cpyder  db      '  UNABLE TO OPEN DESTINATION FILE!$'
+badfnm  db      '          BAD FILE NAME$'
+logerr  db      '     DISK x: IS NOT AVAILABLE!$'
+cpyok   db      ' blocks copied.$'
 contmsg db      'Press any key to continue$'
 delmsg  db      'Delete file $'
+cpymsg1 db      'Copy file $'
+cpymsg2 db      'Enter new filename> $'
 uichyn  db      ' (Y/N)? $'
 uichyna db      ' (Y/N/A)? $'
 logmsg  db      'Select new disk letter: $'
-logerr  db      'Disk x: is not available, any key to continue$'
-schfcb  db      0,'???????????',0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0
+schfcb  db      0,'???????????',0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0
+blnkfcb db      0,'           ',0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0
 mworkng db      'Enumerating files in drive $'
 help1   db      'STEM - a basic file manager for CP/M 2.2 on Altair 8800',CR,LF,CR,LF,'$'
-
-
 
 ;***************************************************
 ; START OF VARIABLE DATA AREA
 ;***************************************************
 orgstk  ds      2               ; original stack pointer
 dpbase  ds      2               ; Disk Parameter Base address
-dphxlt  ds      2               ; XLT (address of phys to logical translation vector
-dphsp1  ds      2               ; scratch pad 1
-dphsp2  ds      2               ; scratch pad 2
-dphsp3  ds      2               ; scratch pad 3
-dphdbuf ds      2               ; address of 126-byte directory scratch pad
-dphdpb  ds      2               ; address of disk parameter block
-dphcsv  ds      2               ; address of changed disk scratch pad
-dphalv  ds      2               ; address of disk storage allocation
-dpbspt  ds      2               ; disk parameter block - sectors per track
-dpbbsh  ds      1               ; disk parameter block - block shift factor
-dpbblm  ds      1               ; disk parameter block - allocation block mask
-dpbexm  ds      1               ; disk parameter block - extent mask
-dpbdsm  ds      2               ; disk parameter block - total storage capacity
-dpbdrm  ds      2               ; disk parameter block - directory entry capacity
-dpbal0  ds      1               ; disk parameter block - reserved blocks
-dpbal1  ds      1               ; disk parameter block - reserved blocks
-dpbcks  ds      2               ; disk parameter block - directory check vector size
-dpboff  ds      2               ; disk parameter block - count of reserved tracks at beginning
+usrfnm  ds      fnlen+1         ; user entered filename buffer
 fcb2    ds      fcblen+1        ; another FCB for file operations
 allflag ds      1               ; flag to indicate "ALL" files
+eofflag ds      1               ; last read was EOF
 fcount  ds      1               ; file count addr
 flsel   ds      1               ; selected file number
 flwrtmp ds      1               ; temporary storage for flower box
 drvtmp  ds      1               ; drive letter storage during drive change
+blkcnt  ds      2               ; generic block counter
+tmpmsg  ds      36              ; temp message buffer
 flposn  ds      2               ; position in file name array
-flist   ds      (maxfls*finflen)+1 ; area for list of filenames
+flist   ds      (maxfls*fnlen)+1; area for list of filenames
 tags    ds      tagcnt          ; bitmap of tagged files
 esctmp  ds      24              ; temp area for building escape sequences
 stkcny  ds      4               ; stack canary
