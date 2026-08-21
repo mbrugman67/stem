@@ -8,7 +8,7 @@ The program name is `STEM` because CP/M doesn't have subdirectories, so anything
 ## Status
 This is a work in progress and definitely not ready for primetime.  It is not feature complete.  Contributions are great!  Here are a couple of ways:
 * Fork this repo, do some coding, and submit a PR.  *(A PR that includes any code produced by any kind of LLM/coding agent will be rejected.  Even the most insignificant bit of that crap will be thrown out.  Sorry, my repo, my rules.)*
-* Try to program out and submit any issues you may find.  Please include as much detail as possible.
+* Try the program out and submit any issues you may find.  Please include as much detail as possible.
 
 ## About the program
 The program was written from scratch in 8080 assembly language.  The main reference materials used were the CP/M 2.2 and Intel 8080 System manuals.  I started writing it using `ED` on an Altair-Duino retro kit, but it got to be a bit too much as the filesize grew over 30K.  The rest was done using the Zed editor.
@@ -53,6 +53,8 @@ The basic requirements are:
 * A display that is VT-100 capable.  The program makes a lot of use of escape sequences to control cursor position and other screen details.
   * The program is written assuming an 80x24 character display.  Using a narrower display will look goofy
   * It works well over a serial link to Linux/MacOS running a command line terminal program like `minicom`.
+
+I have been doing my development on an Altair-Duino 8800 Experimenter kit from [Adwater & Stir](https://adwaterandstir.com/altair/).  They produce a great kit that's fun and easy to build along with excellent online support. 
 
 ## Running the program
 From the command line, run `STEM`.  The program will show the greeting information and then will load and display the files on the current disk:

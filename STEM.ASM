@@ -375,6 +375,7 @@ cpy2:
         lxi     d,cpymsg2       ; "new name"... message
         mvi     c,strout        ; print it
         call    sys             ; syscall
+        ;call    getinput        ; get user's filename input
         call    getfnm          ; get filename from user
         ora     a               ; check return code
         jz      cpy3            ; good filename
@@ -685,8 +686,45 @@ isdsk3:
 
 ;
 ; getinput
-; Get user input
-
+; Get user filename input.  Cursor should be in place and ready to go.
+; routine will validate it's a good filename, and will return drive
+; number if a drive was specified
+; OUT:
+;       A - drive number (0 to 16)
+;           255 if not a valid filename
+;
+getinput:
+        push    h               ; h=sp+5, l=sp+4
+        push    d               ; d=sp+3, e=sp+2
+        push    b               ; b=sp+1, c=sp
+        mvi     b,0             ; byte to initial full buffer with
+        lxi     d,uinplen       ; buffer length
+        lxi     h,usrinp        ; buffer start address
+        call    memset          ; set the buffer to be fulla nulls
+        mvi     m,uinplen       ; first byte of bufffer is length for CP/M
+        xchg                    ; swap H/L with D/E, syscall expects buffer there
+        mvi     c,rdcbuf        ; function to read console bufffer
+        call    sys             ; perform the syscall
+        lxi     h,usrinp+1      ; point to number of entered chars (post editing)
+        mov     e,m             ; move that to E
+        inr     e               ; for first test
+ginp1:                          ; all lowercase alpha to upper loop
+        inx     h               ; next char
+        dcr     e               ; decrement count
+        jz      ginp2           ; go start validation
+        mov     a,m             ; drop char into A
+        cpi     'a'             ; is char greater or equal to lowercase a?
+        jm      ginp1           ; less than lower case a, return whatever this is
+        cpi     'z'+1           ; is char greater than lowercase z?
+        jp      ginp1           ; sure it, just return it
+        ani     0dfh            ; mask off bit 5 (that's the difference between A and a, etc)
+        mov     m,a             ; put case changed char back into buffer
+        jmp     ginp1           ; next char
+ginp2:                          ; start validation
+        pop     b               ;
+        pop     d               ;
+        pop     h               ;
+        ret
 
 ;
 ; getfnm
