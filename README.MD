@@ -1,99 +1,100 @@
-# Altair 8800 File Manager
-When I was a DOS user, the one main killer application that I used day to day was XTreeGold.  I thought I'd try to write one for CP/M in 8080 assembler.
+# STEM - an Altair 8800 File Manager
+This project is a file manager for an Altair 8800 running CP/M 2.2.  
 
-The program name is `STEM` because CP/M doesn't have subdirectories, to anything with "tree" in the name would be kind of dumb.
+By file manager, I mean something like XTreeGold, Midnight Commander, etc.; a text interface based utility to list files on disks and perform operations such as copy, delete, display and rename.  Of course, there are CP/M "built-in" commands to do most of these things, and `PIP` to do the rest, but I miss my days of XTree on DOS.
 
-## Status
-As of right now, it will list files, change drives, delete individual files
+The program name is `STEM` because CP/M doesn't have subdirectories, so anything with "tree" in the name would be kind of dumb :)
 
-### Assembling
-This is written to run in `CP/M 2.2`. A disk image with CP/M, the assembler, debugger, editor, and everything else that's needed is provided on the SD card for the A-D.  Note: [SD card image can be found here](https://adwaterandstir.com/instructions/)
+## About the program
+The program was written from scratch in 8080 assembly language.  The main reference materials used were the CP/M 2.2 and Intel 8080 System manuals.  I started writing it using `ED` on an Altair-Duino retro kit, but it got to be a bit too much as the filesize grew over 30K.  The rest was done using the Zed editor.
 
-Follow the A-D instructions on mounting the CP/M disk and booting CP/M itself.  From there, one can either type in the whole program by hand or transfer by `XMODEM` or other method to the disk.
+Why write a new program in 8080 Assembly by hand in this era?  Because it's been a while since I wrote anything of consequence in Assembly.  Because I find it kind of fun, and it keeps my skills sharp.  Also, it's my small way of pushing back against "modern" languages and development where a developer needs to download and link 37 libraries to produce a 13MB "Hello World!" program.
 
-There should be just one file starting with `STEM` on the disk:
-```  
-D>dir stem.*
-D: STEM     ASM
-D>
-```  
+I did consider C, a language I have a lot of professional experience with, but in the end went with Assembly.  It was a nice clean toolchain to be able to use just the assembler and `DDT` debugger to produce a program.
 
-Once there, assemble it using `asm`:
-```  
-D>asm stem
-CP/M ASSEMBLER - VER 2.0
-1012
-00CH USE FACTOR
-END OF ASSEMBLY
-```   
-The assembler finished with no errors - yay!!  There are two new files on the disk: `stem.prn` and `stem.hex`:
-```  
-D>dir stem.*
-D: STEM     ASM : STEM     PRN : STEM     HEX
-D>
-```  
-`stem.prn` is the "printer" output from the assembler.  It is the output of the assembler listed with the original source - this is like a listing file from a c compiler. 
+One last note about using Assembly in the modern era: if you are ever thinking about getting into reverse engineering, security research, malware analysis, or IoT development you will quite likely be exposed to Assembly at some point.  Whether it's decompiled output in Ghidra or reading through a `.lst` file looking for optimizations, having some experience with Assembly will give you a good leg up.
 
-`stem.hex` is an Intel hex file of the memory image of the assembled program.  Same kind of thing that a microcontroller cross compiler will generate for loading into Flash memory.
+**No LLM, coding agent, vibe, or other "AI" crap was or ever will be used in this project.**
 
-### Creating a loadable image
-The `stem.hex` could be run in the `ddt` debugger, but let's just create the executable image so it can be run from the command line:
-```  
-D>load stem
+### Bulding/installation
+There are a few ways to get the program:  
+* Print out the source listing and type it in by hand.  Just like we did as kids, hand-typing in programs from magazines and books.  While it was a great way to learn, I really don't expect anyone to do that.
+* Transfer the source file to either a software Altair emulator, a hardware retro kit, or the real thing if you're lucky enough to have access to one.  There are a variety of ways to do that, see your docs.  Once there:
+  1) Assemble the program using CP/M's `asm` program.  Command line and output would be something like this (drive letters most likely different, etc.):
+        ```
+        D>b:asm stem
+        CP/M ASSEMBLER - VER 2.0
+        12CB
+        00DH USE FACTOR
+        END OF ASSEMBLY
+        ```
+  1) Then use `load` to create loadable executable image:
+        ``` 
+        D>b:load stem
+        
+        FIRST ADDRESS 0100
+        LAST  ADDRESS 0F01
+        BYTES READ    0E02
+        RECORDS WRITTEN 1D
+        ```
+        This process is almost instantaneous on a software-simulated Altair running on modern hardware.  On Altair-Duino hardware with disk I/O set to "real time", the build process will take several minutes!  Grab a coffee and enjoy the Blinkenlights :)
+* The last way is to download the latest build from the Releases of this repo.  That will be a zip archive with the latest `.com`, `.prn`, and `.hex` files.  The `hex` and `prn` files are included in case you want to use `DDT` to debug and explore program execution.
 
-FIRST ADDRESS 0100
-LAST  ADDRESS 0B44
-BYTES READ    0A45
-RECORDS WRITTEN 15
-```  
-Now there is another file in the directory:
-```   
-D>dir stem.*
-D: STEM     ASM : STEM     PRN : STEM     HEX : STEM     COM
-D>
-```  
-`stem.com` is the executable image of the program!
-### Running the program
-We now have an executable that can be called from the command line like any other program: 
+## Requirements
+The basic requirements are:
+* An Altair 8800 computer, a retro kit, or software emulator.  It should run comfortably in anything with 20KB of RAM or greater (although I have not built it on a machine with less that 64K)
+* One or more disk drives (real or logical/virtual/emulated)
+* CP/M 2.2, including `ASM.COM` and `LOAD.COM` if building from source
+* A display that is VT-100 capable.  The program makes a lot of use of escape sequences to control cursor position and other screen details.
+  * The program is written assuming an 80x24 character display.  Using a narrower display will look goofy
+  * It works well over a serial link to Linux/MacOS running a command line terminal program like `minicom`.
+
+## Running the program
+From the command line, run `STEM`.  The program will show the greeting information and then will load and display the files on the current disk:
 ``` 
-D>stem
-``` 
-The screen will be cleared and the welcome message shown:
+Listing of drive D: (total of 13 files, 0  tagged)
+
+[ ]ASM.COM      [ ]DEMO.ASM     [ ]DEMO.COM     [ ]CLEAR.ASM    [ ]L80.COM
+[ ]LOAD.COM     [ ]M80.COM      [ ]MAC.COM      [ ]GF.TXT       [ ]STEM.ASM
+[ ]STEM.PRN     [ ]STEM.HEX     [ ]STEM.COM
 ```
-D>
-D>             +--------------------------------------------------+
-D>             |                                                  |
-D>             |                  STEM v0.9.0                     |
-D>             |          An Altair 8800 File Manager             |
-D>             |        2026 Mattydyne Heavy Industries           |
-D>             |                                                  |
-D>             |     "H" for help, any other key to start         |
-D>             |                                                  |
-D>             +--------------------------------------------------+
-D>
-
+At the bottom of the display are two lines, the first showing the currently selected file and the second showing the available commands:
 ```
-Pressing any key will load the directory of the current drive:
-```
-Listing of drive A: (total of 31 files, 0  tagged)
-
-[ ]LOOP.BAS      [ ]DEMO.COM      [ ]TETRIS.COM    [ ]VIBE.COM      [ ]DUMP.COM
-[ ]XSUB.COM      [ ]SNAKE.COM     [ ]LS.COM        [ ]RAINBOW.BAS   [ ]SURVEY.COM
-[ ]ONBOARD.COM   [ ]FONT.BAS      [ ]LOVEME.BAS    [ ]CLEAR.COM     [ ]LUNAR.BAS
-[ ]PICO.COM      [ ]WEATHER.COM   [ ]MBASIC.COM    [ ]PIP.COM       [ ]GAME.COM
-[ ]CHAT.COM      [ ]CHAT.SYS      [ ]FORMAT.COM    [ ]OTHELLO.COM   [ ]STARTRK.BAS
-[ ]CHAT.CFG      [ ]TICTAK.BAS    [ ]DISKRW.BAS    [ ]BREAKOUT.COM  [ ]STARINS.BAS
-[ ]ED.COM
-
-
-
-
-
-
-
-
-
-
-Currently selected file (N/P-next/previous,Space-tag/untag): LOOP.BAS
+Currently selected file (N/P-next/previous,Space-tag/untag): ASM.COM
 Command(D-delete,C-copy,T-display,R-rename,H-help,X-exit)? 
+```
+*Note - commands can be entered in upper or lower case*
+### Navigating files
+As the first line hints at, pressing the `N` and `P` keys will move the next and previous file in the listing.  
+
+### Tagging files 
+Commands are performed on "tagged" files.  Pressing the space bar will either "tag" or "untag" the selected file.  For example, `DEMO.ASM` and `M80.COM` have been "tagged":
+```
+              Listing of drive D: (total of 13 files, 2  tagged)
+
+[ ]ASM.COM      [X]DEMO.ASM     [ ]DEMO.COM     [ ]CLEAR.ASM    [ ]L80.COM
+[ ]LOAD.COM     [X]M80.COM      [ ]MAC.COM      [ ]GF.TXT       [ ]STEM.ASM
+[ ]STEM.PRN     [ ]STEM.HEX     [ ]STEM.COM
+```
+### Deleting files
+Once one or more files are tagged, pressing the `D` key.  A popup will prompt for confirmation of deletion.  Select `A` will delete the rest of the tagged files without prompt
+```
+              Listing of drive D: (total of 13 files, 2  tagged)
+
+[ ]ASM.COM      [X]DEMO.ASM     [ ]DEMO.COM     [ ]CLEAR.ASM    [ ]L80.COM
+[ ]LOAD.COM     [X]M80.COM      [ ]MAC.COM      [ ]GF.TXT       [ ]STEM.ASM
+[ ]STEM.PRN    +--------------------------------------------------+
+               |                                                  |
+               |         Delete file M80.COM (Y/N/A)?             |
+               |                                                  |
+               +--------------------------------------------------+
+
+```
+After deletion, the file list will be reloaded:
+``` 
+              Listing of drive D: (total of 11 files, 0  tagged)
+
+[ ]ASM.COM      [ ]DEMO.COM     [ ]CLEAR.ASM    [ ]L80.COM      [ ]LOAD.COM
+[ ]MAC.COM      [ ]GF.TXT       [ ]STEM.ASM     [ ]STEM.PRN     [ ]STEM.HEX
+[ ]STEM.COM
 ```
