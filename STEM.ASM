@@ -108,6 +108,7 @@ dsmax   equ     71              ; when to wrap filename list
 strtrow equ     3               ; first row of file list
 maxfls  equ     70              ; max files in buffer
 tagcnt  equ     maxfls/8+1      ; number of tag bytes in array
+uinplen equ     40              ; length of user input buffer
 
 ;****************************************************
 ; Start of actual program code here
@@ -174,7 +175,7 @@ uinext:                         ; user UI interaction loop
         jmp     cleanup         ; get outta here
 
 cont:
-        call    prnvars         ; print debug stuffs on line 2
+        ;call    prnvars         ; print debug stuffs on line 2
         call    prnui           ; print user interface info & menu
         call    cin2uppr        ; get user input (force to uppercase)
 
@@ -563,7 +564,6 @@ prnvars:
         push    d               ; d=sp+5, e=sp+4
         push    b               ; b=sp+3, c=sp+2
         push    psw             ; psw=sp, a=sp+1
-        rst     7
         mvi     d,2             ;
         mvi     e,1             ;
         call    rstline         ;
@@ -606,32 +606,6 @@ dbgl2:
         pop     d               ;
         pop     h               ;
         ret
-
-;
-; tstdrvs
-; Try to find a file on the first 4 drives.  This will "log"
-; them in CP/M, so that they show up in the "logged in vector"
-tstdrvs:
-        lxi     d,schfcb        ; point to the "find any file" fcb template
-        lxi     h,fcb1          ; point to the default file control block
-        lxi     b,fcblen        ; length of FCB
-        call    memcpy          ; copy template to default FCB
-        mvi     a,1             ; set drive 1 (A)
-        sta     drvtmp          ; save that for now
-tstd1:
-        lda     drvtmp          ; get current drive select
-        lxi     d,fcb1          ; point to default FCB
-        stax    d               ; store drive number in byte 0
-        mvi     c,srchf         ; syscall function to find file
-        call    sys             ; do the syscall
-        lda     drvtmp          ; go back and get the drive number
-        inr     a               ; increment
-        sta     drvtmp          ; save it
-        cpi     4               ; is it 4 yet?
-        rz                      ; if so, we're done; return to caller
-        jmp     tstd1           ; go search on next drive
-
-
 
 ;*************************************************
 ; Start of subroutines
@@ -708,6 +682,11 @@ isdsk3:
         pop     h               ;
         pop     b               ;
         ret
+
+;
+; getinput
+; Get user input
+
 
 ;
 ; getfnm
@@ -1908,6 +1887,7 @@ flwrtmp ds      1               ; temporary storage for flower box
 drvtmp  ds      1               ; drive letter storage during drive change
 blkcnt  ds      2               ; generic block counter
 tmpmsg  ds      36              ; temp message buffer
+usrinp  ds      uinplen         ; user input buffer
 flposn  ds      2               ; position in file name array
 flist   ds      (maxfls*fnlen)+1; area for list of filenames
 tags    ds      tagcnt          ; bitmap of tagged files
