@@ -375,8 +375,8 @@ cpy2:
         lxi     d,cpymsg2       ; "new name"... message
         mvi     c,strout        ; print it
         call    sys             ; syscall
-        ;call    getinput        ; get user's filename input
-        call    getfnm          ; get filename from user
+        call    getinput        ; get user's filename input
+        ;call    getfnm          ; get filename from user
         ora     a               ; check return code
         jz      cpy3            ; good filename
         lxi     d,badfnm        ; bad filename message
@@ -690,13 +690,16 @@ isdsk3:
 ; routine will validate it's a good filename, and will return drive
 ; number if a drive was specified
 ; OUT:
-;       A - drive number (0 to 16)
-;           255 if not a valid filename
+;       A - zero means success, 255 means failure
+;       D/E - FCB with filename
 ;
 getinput:
-        push    h               ; h=sp+5, l=sp+4
-        push    d               ; d=sp+3, e=sp+2
+        push    h               ; h=sp+3, l=sp+2
         push    b               ; b=sp+1, c=sp
+        lxi     d,blnkfcb       ; pre-set "blank" FCB data block
+        lxi     h,fcb2          ; point to FCB2
+        lxi     b,fcblen        ; length of FCB
+        call    memcpy          ; copy "blank" data to FCB
         mvi     b,0             ; byte to initial full buffer with
         lxi     d,uinplen       ; buffer length
         lxi     h,usrinp        ; buffer start address
@@ -706,6 +709,9 @@ getinput:
         mvi     c,rdcbuf        ; function to read console bufffer
         call    sys             ; perform the syscall
         lxi     h,usrinp+1      ; point to number of entered chars (post editing)
+        mov     a,m             ; get entered char count
+        ora     a               ; make sure non-zero
+        jz      ginperr         ; ope - error!
         mov     e,m             ; move that to E
         inr     e               ; for first test
 ginp1:                          ; all lowercase alpha to upper loop
@@ -720,11 +726,78 @@ ginp1:                          ; all lowercase alpha to upper loop
         ani     0dfh            ; mask off bit 5 (that's the difference between A and a, etc)
         mov     m,a             ; put case changed char back into buffer
         jmp     ginp1           ; next char
-ginp2:                          ; start validation
+ginp2:                          ; check for drive selection
+        lda     usrinp+3        ; if drive selected, should be a ":" here
+        cpi     ':'             ; check for a colon
+        jnz     ginp2a          ; no colon selected
+        lda     usrinp+2        ; character before colon
+        cpi     'A'             ; compare with "A"
+        jm      ginperr         ; bad drive letter, go back to caller
+        cpi     'P'+1           ; with last possible drive
+        jp      ginperr         ; another bad drive char
+        sui     'A'-1           ; offset from ASCII so "A"=1, "B"=2, etc.
+        sta     fcb2            ; store drive number into FCB
+        lda     usrinp+1        ; re-fetch user entry length
+        cpi     2               ; did user just enter letter + colon?
+        jz      ginpok          ; then we're all done here
+        sui     2               ; subtract 2 from length (removing letter+colon from count)
+        mov     c,a             ; save counter in C
+        lxi     h,usrinp+4      ; first char after colon
+        jmp     ginp2b          ; go start validating
+ginp2a:                         ; no drive specified, set up for copy that way
+        lxi     h,usrinp+2      ; start of chars (no drive letter)
+        lda     usrinp+1        ; re-fetch user entered length
+        mov     c,a             ; save that as a counter
+ginp2b:                         ; rest of setup
+        lxi     d,fcb2+1        ; first char of FCB filename space
+        mvi     b,8             ; up to 8 chars in filename basename
+        xra     a               ; zero a register
+        push    psw             ; push A
+ginp3:                          ; start building a possible filename
+        mov     a,m             ; get next char in entered  name
+        cpi     '.'             ; separator?
+        jz      ginp3a          ; yup, jump to extension
+        inx     h               ; increment user entry pointer
+        stax    d               ; and drop it into the FCB
+        inx     d               ; increment fCB pointer
+        dcr     c               ; decrement user entry counter
+        jz      ginpok          ; done, return with success
+        dcr     b               ; decrement name counter
+        jz      ginperr         ; used up available character space, but more entry...
+        jmp     ginp3           ; next char
+ginp3a:                         ; transition from basename to extension
+        inx     h               ; increment user input position
+        pop     psw             ; state was pushed on stack (PSW/A)
+        push    psw             ; restore it to keep stack set
+        ora     a               ; is state zero?
+        jnz     ginperr         ; ope - we got an extra period
+        pop     psw             ; pop A back off the stack
+        inr     a               ; set state to 1
+        push    psw             ; and push it back on
+        lxi     d,fcb2+9        ; extension starts there
+        mvi     b,4             ; 3 characters in extension
+        jmp     ginp3           ; parse that out
+
+
+
+
+
+
+
+
+
+
+ginperr:
+        mvi     a,0ffh          ; set error value
+        jmp     ginpret         ; and get outta here
+ginpok:
+        mvi     a,0             ; set success return
+ginpret:
+        rst     7
+        pop     psw             ;
         pop     b               ;
-        pop     d               ;
         pop     h               ;
-        ret
+        ret                     ;
 
 ;
 ; getfnm
