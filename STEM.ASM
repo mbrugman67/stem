@@ -455,8 +455,80 @@ cpydfl:
 uitype:
         cpi     'T'             ; display file?
         jnz     uiren           ; nope, try rename next
+        call    cnttags         ; get count of tagged files
+        cpi     0               ; is it zero?
+        jnz     typ1            ; no? go start renaming
+        lxi     d,typser        ; error message for no files selected
+        call    perr            ; print the error message in a flower box
+        jmp     usrlp0          ; redraw all
+typ1:
+        call    itertgs         ; get the next tagged file
+        cpi     0ffh            ; 0xff means no more tagged files
+        jz      usrlp0          ; all done
+typbox:
+        mvi     d,5             ; line 5
+        mvi     e,16            ; column 16
+        mvi     a,4             ; 3 blank lines
+        call    flower          ; draw a flower box
+        mvi     d,7             ; line 7
+        mvi     e,26            ; column 26
+        call    setcur          ; put cursor there
+        lxi     d,typmsg1       ; "Display file"... message
+        mvi     c,strout        ; print it
+        call    sys             ; syscall
+        call    prnname         ; print file name
+        lxi     d,uichyn        ; Yes/No
+        mvi     c,strout        ; print
+        call    sys             ; syscall
+        call    cin2uppr        ; get user choice
+        cpi     'N'             ; user said nope
+        jz      typ1            ; check next file
+        cpi     'Y'             ; user said yup
+        jz      typ2            ; oboy, here we go
+        jmp     typbox          ; something else
+typ2:
+        call    bldfcb          ; set up a file control block for source file
+        lxi     d,fcb1          ; get the FCB built from current file
+        mvi     c,fopen         ; open file syscall
+        call    sys             ; syscall
+        cpi     0ffh            ; good result is 0,1,2,3; 255 is a failure
+        jz      typoerr         ; jump to error message
+        lxi     d,fcb1          ; point to the file FCB
+        mvi     c,rdseq         ; read the first block
+        call    sys             ; syscall
+        cpi     0               ; non zero means error in read
+        jnz     typrfl          ; jump to read fail
+        mvi     b,080h          ; set B with length of block
+        lxi     h,dma1          ; point H/L to DMA 1 area
+        mvi     c,0             ; set "this is binary" to false
+typ2a:                          ; loop through first block, check for non-printable
+        mov     a,m             ; get this char
+        ani     080h            ; We're gonna say that if bit 8 is set, this should be binary
+        jnz     typ2b           ; go set flag now
+        inx     h               ; next char
+        dcr     b               ; decrement counter
+        jnz     typ2a           ; go check next
+        jmp     typ3            ; decide now if ascii or binary
+typ2b:                          ; binary file
+        mvi     c,0ffh          ; set the flag
+typ3                            ; get ready to run pager or hex dump
+        rst     7
 
 
+typoerr:
+        lxi     d,cpysr1        ; "Unable to open source..." msg
+        call    perr            ; display error message
+        jmp     typ1            ; go try again
+typrfl:                         ; read failure
+        jmp     typ1            ; go restart for now TODO
+
+
+
+        ; Rename all tagged files.  User will be prompted for a new filename
+        ; for each file.  If a file with the new name already
+        ; exists, file will not be copied, and user will be prompted for a
+        ; new name.  This is almost a clone of the copy file code; there could
+        ; definitely be stuff factored out into routine(s)
 uiren:
         cpi     'R'             ; rename file?
         jnz     uihelp          ; nope, try
@@ -487,7 +559,7 @@ renbox:
         call    sys             ; syscall
         call    cin2uppr        ; get user choice
         cpi     'N'             ; user said nope
-        jz      cpy1            ; check next file
+        jz      ren1            ; check next file
         cpi     'Y'             ; user said yup
         jz      ren2            ; oboy, here we go
         jmp     renbox          ; something else
@@ -549,11 +621,11 @@ renexst:
 renofl:
         lxi     d,cpysr1        ; "Unable to open source..." msg
         call    perr            ; display error message
-        jmp     renbox          ; go try again
+        jmp     ren1            ; go try again
 renfl:
         lxi     d,cpyder        ; "Unable to open source..." msg
         call    perr            ; display error message
-        jmp     renbox          ; go try again
+        jmp     ren1            ; go try again
 
 
 
@@ -1954,6 +2026,7 @@ uistr2  db      'Command(D-delete,C-copy,T-display,R-rename,H-help,X-exit)? $'
 delser  db      'Tag one or more files for deletion!$'
 cpyser  db      '   Tag one or more files to copy!$'
 renser  db      '  Tag one or more files to rename!$'
+typser  db      '  Tag one or more files to display!$'
 cpyeer  db      '  DESTINATION FILE ALREADY EXISTS!$'
 cpysr1  db      '    UNABLE TO OPEN SOURCE FILE!$'
 cpyder  db      '  UNABLE TO OPEN DESTINATION FILE!$'
@@ -1965,6 +2038,7 @@ contmsg db      'Press any key to continue$'
 delmsg  db      'Delete file $'
 cpymsg1 db      'Copy file $'
 renmsg1 db      'Rename file $'
+typmsg1 db      'Display file $'
 cpymsg2 db      'Enter new filename> $'
 uichyn  db      ' (Y/N)? $'
 uichyna db      ' (Y/N/A)? $'
