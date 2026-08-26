@@ -354,10 +354,6 @@ cpybox:
         jmp     cpybox          ; something else
 cpy2:
         call    bldfcb          ; set up a file control block for source file
-        lxi     d,blnkfcb       ; blank FCB, ready for filename (src)
-        lxi     h,fcb2          ; get FCB 2 address (dst)
-        lxi     b,fcblen        ; set length
-        call    memcpy          ; copy blank FCB data to FCB2
         mvi     d,5             ; line 5
         mvi     e,16            ; column 16
         mvi     a,6             ; 5 blank lines
@@ -432,8 +428,8 @@ cpy5:
         lxi     d,cpyok         ; ' blocks copied' message
         mvi     c,strout        ; print string function
         call    sys             ; syscall
-        mvi     c,conin
-        call    sys
+        mvi     c,conin         ; wait for user keyboard hit
+        call    sys             ; before moving on
         jmp     cpy1            ; next tagged file
 cpyexst:
         lxi     d,fcb2          ; make sure we're pointing to dest file
@@ -450,7 +446,7 @@ cpydfl:
         lxi     d,fcb1          ; point to source file
         mvi     d,fclose        ; close syscall
         call    sys             ; go close it
-        lxi     d,cpyder        ; "Unable to open source..." msg
+        lxi     d,render        ; "Unable to rename..." msg
         call    perr            ; display error message
         jmp     cpybox          ; go try again
 
@@ -464,6 +460,102 @@ uitype:
 uiren:
         cpi     'R'             ; rename file?
         jnz     uihelp          ; nope, try
+        call    cnttags         ; get count of tagged files
+        cpi     0               ; is it zero?
+        jnz     ren1            ; no? go start renaming
+        lxi     d,renser        ; error message for no files selected
+        call    perr            ; print the error message in a flower box
+        jmp     usrlp0          ; redraw all
+ren1:
+        call    itertgs         ; get the next tagged file
+        cpi     0ffh            ; 0xff means no more tagged files
+        jz      usrlp0          ; all done
+renbox:
+        mvi     d,5             ; line 5
+        mvi     e,16            ; column 16
+        mvi     a,4             ; 3 blank lines
+        call    flower          ; draw a flower box
+        mvi     d,7             ; line 7
+        mvi     e,26            ; column 26
+        call    setcur          ; put cursor there
+        lxi     d,renmsg1       ; "Rename file"... message
+        mvi     c,strout        ; print it
+        call    sys             ; syscall
+        call    prnname         ; print file name
+        lxi     d,uichyn        ; Yes/No
+        mvi     c,strout        ; print
+        call    sys             ; syscall
+        call    cin2uppr        ; get user choice
+        cpi     'N'             ; user said nope
+        jz      cpy1            ; check next file
+        cpi     'Y'             ; user said yup
+        jz      ren2            ; oboy, here we go
+        jmp     renbox          ; something else
+ren2:
+        call    bldfcb          ; set up a file control block for source file
+        mvi     d,5             ; line 5
+        mvi     e,16            ; column 16
+        mvi     a,6             ; 5 blank lines
+        call    flower          ; draw a flower box
+        mvi     d,7             ; line 7
+        mvi     e,29            ; column 29
+        call    setcur          ; put cursor there
+        lxi     d,renmsg1       ; "Copy file"... message
+        mvi     c,strout        ; print it
+        call    sys             ; syscall
+        call    prnname         ; print file name
+        mvi     d,9             ; line 7
+        mvi     e,22            ; column 22
+        call    setcur          ; put cursor there
+        lxi     d,cpymsg2       ; "new name"... message
+        mvi     c,strout        ; print it
+        call    sys             ; syscall
+        call    getfnm          ; get filename from user
+        ora     a               ; check return code
+        jz      ren3            ; good filename
+        lxi     d,badfnm        ; bad filename message
+        call    perr            ; print the error
+        jmp     renbox          ; re-prompt for name
+ren3:
+        mvi     c,fopen         ; syscall code for open file
+        call    sys             ; try to open the file
+        cpi     0ffh            ; 255 means file does not exist.  Good!
+        jnz     renexst         ; go error for destination already exists
+        lxi     d,fcb1          ; point to source file
+        mvi     c,fopen         ; try to open it
+        call    sys             ; hey FDOS - go open the file!
+        cpi     0ffh            ; 255 means unable to open the file :/
+        jz      renofl          ; jump to open fail
+        lxi     d,fcb1          ; make sure we're pointing at source file
+        mvi     c,fclose        ; close syscal
+        call    sys             ; sycall
+        lxi     d,fcb2          ; point to start of fcb2
+        lxi     h,fcb1+16       ; point 16 bytes into FCB1
+        lxi     b,16            ; number of bytes to copy
+        call    memcpy          ; copy fname from fcb2 into second half of fcb1
+        mvi     c,fname         ; rename syscall calls for one FCB with original
+        lxi     d,fcb1          ; in the first 16 bytes of a FCB (pointed to by D/E)
+        call    sys             ; and new name in second 16 bytes
+        cpi     0ffh            ; 255 means unable to rename  file
+        jz      renfl           ; error message
+        jmp     ren1            ; jump back to next file
+renexst:
+        lxi     d,fcb2          ; make sure we're pointing to dest file
+        mvi     c,fclose        ; close bad existing destination file
+        call    sys             ; syscall
+        lxi     d,cpyeer        ; file exists message
+        call    perr            ; error display
+        jmp     renbox          ; back to prompt file again
+renofl:
+        lxi     d,cpysr1        ; "Unable to open source..." msg
+        call    perr            ; display error message
+        jmp     renbox          ; go try again
+renfl:
+        lxi     d,cpyder        ; "Unable to open source..." msg
+        call    perr            ; display error message
+        jmp     renbox          ; go try again
+
+
 
 uihelp:
         cpi     'H'
@@ -1861,15 +1953,18 @@ uistr1  db      'Currently selected file (N/P-next/previous,Space-tag/untag): $'
 uistr2  db      'Command(D-delete,C-copy,T-display,R-rename,H-help,X-exit)? $'
 delser  db      'Tag one or more files for deletion!$'
 cpyser  db      '   Tag one or more files to copy!$'
+renser  db      '  Tag one or more files to rename!$'
 cpyeer  db      '  DESTINATION FILE ALREADY EXISTS!$'
 cpysr1  db      '    UNABLE TO OPEN SOURCE FILE!$'
 cpyder  db      '  UNABLE TO OPEN DESTINATION FILE!$'
+render  db      '        UNABLE TO RENAME FILE!$'
 badfnm  db      '          BAD FILE NAME$'
 logerr  db      '     DISK x: IS NOT AVAILABLE!$'
 cpyok   db      ' blocks copied.$'
 contmsg db      'Press any key to continue$'
 delmsg  db      'Delete file $'
 cpymsg1 db      'Copy file $'
+renmsg1 db      'Rename file $'
 cpymsg2 db      'Enter new filename> $'
 uichyn  db      ' (Y/N)? $'
 uichyna db      ' (Y/N/A)? $'
