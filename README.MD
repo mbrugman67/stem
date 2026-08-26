@@ -65,7 +65,7 @@ At times, I used a [docker-based emulator](https://gloveboxes.github.io/Altair-8
 
 ## Running the program
 From the command line, run `STEM`.  The program will show the greeting information and then will load and display the files on the current disk.  At the bottom of the display are two lines, the first showing the currently selected file and the second showing the available commands:
-![listing](/img/stem2.png | width=480)
+![listing](/img/stem2.png)
 
 *Note - commands can be entered in upper or lower case*
 ### Navigating files
