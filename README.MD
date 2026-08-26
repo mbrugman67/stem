@@ -64,19 +64,9 @@ Most of the development has been done an Altair-Duino 8800 Experimenter kit from
 At times, I used a [docker-based emulator](https://gloveboxes.github.io/Altair-8800-Emulator/); mostly when I was away from my desk where the A-D sits.  It's a solid and easy to use emulator, but I strongly dislike that project's push of vibe coding/AI.  Just my opinion and preference.
 
 ## Running the program
-From the command line, run `STEM`.  The program will show the greeting information and then will load and display the files on the current disk:
-``` 
-              Listing of drive D: (total of 13 files, 0  tagged)
+From the command line, run `STEM`.  The program will show the greeting information and then will load and display the files on the current disk.  At the bottom of the display are two lines, the first showing the currently selected file and the second showing the available commands:
+![listing](/img/stem2.png | width=480)
 
-[ ]ASM.COM      [ ]DEMO.ASM     [ ]DEMO.COM     [ ]CLEAR.ASM    [ ]L80.COM
-[ ]LOAD.COM     [ ]M80.COM      [ ]MAC.COM      [ ]GF.TXT       [ ]STEM.ASM
-[ ]STEM.PRN     [ ]STEM.HEX     [ ]STEM.COM
-```
-At the bottom of the display are two lines, the first showing the currently selected file and the second showing the available commands:
-```
-Currently selected file (N/P-next/previous,Space-tag/untag): ASM.COM
-Command(D-delete,C-copy,T-display,R-rename,H-help,X-exit)? 
-```
 *Note - commands can be entered in upper or lower case*
 ### Navigating files
 As the first line hints at, pressing the `N` and `P` keys will move the next and previous file in the listing.  The current filename will be shown at the end of the "Currently selected file" line.
