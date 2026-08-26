@@ -23,7 +23,7 @@ When writing the program, I spent a lot of time trying to be sure to accurately 
 
 Another reason to use Assembly in the modern era: if you are ever thinking about getting into reverse engineering, security research, malware analysis, or Embedded/IoT/IIoT development you may be exposed to Assembly at some point.  Whether it's decompiled output in Ghidra or reading through a `.lst` file looking for optimizations, having some experience with Assembly will give you a good leg up.
 
-Final note:  **No LLM, coding agent, vibe, or other "AI" crap was or ever will be used in this project.  I have no desire to ever see any of that clanker shit.**
+Final note:  **No LLM, coding agent, vibe, or other "AI" crap was or ever will be used in this project.  I have no desire to be around any of that clanker garbage.**
 
 ### Building/installation
 There are a few ways to get the program:  

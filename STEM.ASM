@@ -375,24 +375,13 @@ cpy2:
         lxi     d,cpymsg2       ; "new name"... message
         mvi     c,strout        ; print it
         call    sys             ; syscall
-        call    getinput        ; get user's filename input
-        ;call    getfnm          ; get filename from user
+        call    getfnm          ; get filename from user
         ora     a               ; check return code
         jz      cpy3            ; good filename
         lxi     d,badfnm        ; bad filename message
         call    perr            ; print the error
         jmp     cpybox          ; re-prompt for name
-cpy3:
-        call    bldfcb          ; set up source file control block
-        lxi     h,fcb2          ; start setting up dest FCB (dst)
-        lxi     d,blnkfcb       ; default "blank" FCB (src)
-        lxi     b,fcblen        ; FCB length
-        call    memcpy          ; copy default to dest FCB
-        lxi     d,usrfnm        ; point to user entered filenamene (src)
-        lxi     h,fcb2+1        ; name startes at byte 1 (dst)
-        lxi     b,fnlen         ; copy count = filename length
-        call    memcpy          ; copy user filename into dest FCB
-        lxi     d,fcb2          ; point to dest FCB1
+cpy3:                           ; start copy process, dest FCB is already in D/E
         mvi     c,fopen         ; syscall code for open file
         call    sys             ; try to open the file
         cpi     0ffh            ; 255 means file does not exist.  Good!
@@ -416,7 +405,7 @@ cpy4:                           ; FILE COPY HAPPENS THROUGH DMA BLOCK at 0x0080
         mvi     c,rdseq         ; read a block function
         call    sys             ; read the block
         ora     a               ; check for end of file (any non-zero result)
-        jz      cpy5            ; go clean up
+        jnz     cpy5            ; go clean up
         lxi     d,fcb2          ; destination file
         mvi     c,wrseq         ; write block function
         call    sys             ; write the block
@@ -685,7 +674,7 @@ isdsk3:
         ret
 
 ;
-; getinput
+; getfnm
 ; Get user filename input.  Cursor should be in place and ready to go.
 ; routine will validate it's a good filename, and will return drive
 ; number if a drive was specified
@@ -693,9 +682,7 @@ isdsk3:
 ;       A - zero means success, 255 means failure
 ;       D/E - FCB with filename
 ;
-getinput:
-        push    h               ; h=sp+3, l=sp+2
-        push    b               ; b=sp+1, c=sp
+getfnm:
         lxi     d,blnkfcb       ; pre-set "blank" FCB data block
         lxi     h,fcb2          ; point to FCB2
         lxi     b,fcblen        ; length of FCB
@@ -752,7 +739,7 @@ ginp2b:                         ; rest of setup
         lxi     d,fcb2+1        ; first char of FCB filename space
         mvi     b,8             ; up to 8 chars in filename basename
         xra     a               ; zero a register
-        push    psw             ; push A
+        sta     fnstate         ; save that as current state
 ginp3:                          ; start building a possible filename
         mov     a,m             ; get next char in entered  name
         cpi     '.'             ; separator?
@@ -761,139 +748,48 @@ ginp3:                          ; start building a possible filename
         stax    d               ; and drop it into the FCB
         inx     d               ; increment fCB pointer
         dcr     c               ; decrement user entry counter
-        jz      ginpok          ; done, return with success
+        jz      ginp4           ; done copying, go verify
         dcr     b               ; decrement name counter
         jz      ginperr         ; used up available character space, but more entry...
         jmp     ginp3           ; next char
 ginp3a:                         ; transition from basename to extension
         inx     h               ; increment user input position
-        pop     psw             ; state was pushed on stack (PSW/A)
-        push    psw             ; restore it to keep stack set
+        lda     fnstate         ; what is our current state?
         ora     a               ; is state zero?
         jnz     ginperr         ; ope - we got an extra period
-        pop     psw             ; pop A back off the stack
         inr     a               ; set state to 1
-        push    psw             ; and push it back on
+        sta     fnstate         ; save new state
         lxi     d,fcb2+9        ; extension starts there
         mvi     b,4             ; 3 characters in extension
         jmp     ginp3           ; parse that out
-
-
-
-
-
-
-
-
-
-
-ginperr:
+ginp4:                          ; set up for validation
+        mvi     c,11            ; set C to total filename size (base + ext) + 1
+        lxi     h,fcb2          ; point H/L to FCB2 filename area
+ginp4a:                         ; start validating the filename
+        inx     h               ; point to next char
+        dcr     c               ; name char counter
+        jz      ginpok          ; all done!!
+        mov     a,m             ; get next char
+        cpi     ' '             ; space is OK TODO - only between base and ext, FIX THIS!
+        jz      ginp4a          ; next
+        cpi     'Z'+1           ; can't be greater than "Z"
+        jp      ginperr         ; return error
+        cpi     'A'             ; compare to "A"
+        jp      ginp4a          ; between "A" and "Z" is OK
+        cpi     '9'+1           ; can't be between "9" and "A"
+        jp      ginperr         ; so that would be an error
+        cpi     '0'             ; can't be less than zero (sorry, B.E.E.)
+        jm      ginperr         ; error
+        jmp     ginp4a          ; next char
+ginperr:                        ; return with error code
         mvi     a,0ffh          ; set error value
         jmp     ginpret         ; and get outta here
-ginpok:
+ginpok:                         ; return with success
         mvi     a,0             ; set success return
+        lxi     d,fcb2          ; good return with D pointing to our FCB
 ginpret:
-        rst     7
-        pop     psw             ;
-        pop     b               ;
-        pop     h               ;
         ret                     ;
 
-;
-; getfnm
-; Get a filename from the user
-; Result placed in buffer at USRFNM
-; OUT:
-;       A - 0=good filename, 0xff bad
-getfnm:
-        push    b               ;
-        push    d               ;
-        push    h               ;
-        lxi     h,usrfnm        ; get address of fn buffer
-        mvi     b,' '           ; fill with spaces
-        lxi     d,fnlen         ; for filename number of bytes
-        call    memset          ; go do it
-        lxi     d,usrfnm+fnlen  ; special thing here
-        mvi     a,'$'           ; drop a dollar sign at the end of the buffer
-        stax    d               ; so we can straight up print it with strout
-        mvi     c,8             ; char counter
-        lxi     h,usrfnm        ; point to start of filename buffer
-gfn1:
-        call    cin2uppr        ; get user input
-        cpi     '.'             ; early "dot"?
-        jz      gfn4            ; go get the extension
-        cpi     8               ; user hit <BACKSPACE>?
-        jnz     gfn2            ; nope, go place char in buffer
-        mov     a,c             ; get char position
-        cpi     8               ; have any chars been entered?
-        jz      gfn1            ; ignore the backspace
-        inr     c               ; revert a char
-        dcx     h               ; back up the buffer
-        mvi     m,' '           ; put the space back, too
-        jmp     gfn1            ; go try again
-gfn2:
-        mov     m,a             ; drop it into filename
-        inx     h               ; next byte
-        dcr     c               ; next char, sets zero flag
-        jnz     gfn1            ; Done with basename, get extension
-gfn3:
-        mvi     a,'.'           ; force a separator
-        call    pchar           ; and print it
-gfn4:
-        lxi     h,usrfnm+8      ; start of extension
-        mvi     c,3             ; extension length
-gfn5:
-        call    cin2uppr        ; get input
-        cpi     CR              ; user hit <ENTER>?
-        jz      gfn6            ; go validate
-        cpi     08h             ; user hit <BACKSPACE>?
-        jnz     gfn6            ; nope, add extension character
-        mov     a,c             ; get char position
-        cpi     3               ; have any chars been entered?
-        jz      gfn5            ; ignore the backspace
-        inr     c               ; revert a char
-        dcx     h               ; back up the buffer
-        mvi     m,' '           ; put the space back, too
-        jmp     gfn5            ; go try again
-gfn6:
-        mov     m,a             ; copy to FCB2
-        inx     h               ; next byte
-        dcr     c               ; next ext, sets zero flag
-        jnz     gfn5            ; loop
-gfn7:
-        mvi     b,0fh          ; assume a bad name
-gfnval:
-        lxi     h,usrfnm        ; time to start validating
-        mov     a,m             ; get first character
-        cpi     'A'             ; is char less than uppercase A?
-        jm      gfnret          ; filename must start with alpha
-        cpi     'Z'             ; is char greater than uppercase Z?
-        jp      gfnret          ; again, bad!
-        inx     h               ; next char
-        mvi     c,10            ; seven more chars + 3 ext to go
-gfnv2:
-        mov     a,m             ; get next char
-        cpi     ' '             ; space is OK (ok, this can be a problem to check...)
-        jz      gfnv3           ; spaces allowed between name and ext
-        cpi     'Z'+1           ; can't be greater than capital Z
-        jp      gfnret          ; return with error
-        cpi     'A'             ; but can be between A and Z
-        jp      gfnv3           ; return with error
-        cpi     '9'+1           ; at this point, can't be greater than "9"
-        jp      gfnret          ; return with error
-        cpi     '0'             ; or less than zero (sorry, B.E.E.)
-        jm      gfnret          ; return with error
-gfnv3:
-        inx     h               ; next char
-        dcr     c               ; decrement count
-        jnz     gfnv2           ; next check
-        mvi     b,0             ; if we got this far, name is good!
-gfnret:
-        mov     a,b             ; get return code for exit
-        pop     h               ;
-        pop     d               ;
-        pop     b               ;
-        ret
 ;
 ; pchar
 ; print a character to console out
@@ -1996,6 +1892,7 @@ fcount  ds      1               ; file count addr
 flsel   ds      1               ; selected file number
 flwrtmp ds      1               ; temporary storage for flower box
 drvtmp  ds      1               ; drive letter storage during drive change
+fnstate ds      1               ; get filename state
 blkcnt  ds      2               ; generic block counter
 tmpmsg  ds      36              ; temp message buffer
 usrinp  ds      uinplen         ; user input buffer
