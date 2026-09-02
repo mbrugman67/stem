@@ -1470,6 +1470,15 @@ phdr:
         lxi     d,uirevrs       ; set reverse video escape sequence
         mvi     c,strout        ; print that to terminal
         call    sys             ; syscall
+        mvi     c,80            ; 80 characters
+phdr1:
+        mvi     a,' '           ; space
+        call    pchar           ; print a space to fill the line with reverse video
+        dcr     c               ; next char
+        jnz     phdr1           ; go print it
+        mvi     d,1             ; back to line 1
+        mvi     e,1             ; column 1
+        call    setcur          ; put cursor there
         lxi     d,typhdr        ; header for display page
         mvi     c,strout        ; print that
         call    sys             ; thanks CP/M
@@ -1498,23 +1507,29 @@ pftr:
         push    d               ;
         push    h               ;
         push    psw             ;
-        mvi     d,23            ; bottom row
-        mvi     e,0             ; first column
-        call    setcur          ; move cursor there
         lxi     d,uirevrs       ; set reverse video escape sequence
         mvi     c,strout        ; print that to terminal
         call    sys             ; syscall
-        lxi     d,uibold        ; bold the filename
-        mvi     c,strout        ; print that
-        call    sys             ; syscall
+        mvi     d,23            ; bottom row
+        mvi     e,1             ; first column
+        call    setcur          ; move cursor there
+        mvi     c,80            ; 80 characters
+pftr1:
+        mvi     a,' '           ; space
+        call    pchar           ; print a space to fill the line with reverse video
+        dcr     c               ; next char
+        jnz     pftr1           ;
+        mvi     d,23            ; go back to bottom
+        mvi     e,1             ; left corner
+        call    setcur          ; put curser back
         pop     psw             ; get A back
         cpi     0               ; was it zero?
-        jz      pftr1           ; yup, not end of file footer
+        jz      pftr2           ; yup, not end of file footer
         lxi     d,typend        ; end of file message
-        jmp     pftr2           ; go print
-pftr1:                          ;
+        jmp     pftr3           ; go print
+pftr2:                          ;
         lxi     d,typftr        ; footer for display page
-pftr2:
+pftr3:
         mvi     c,strout        ; print that
         call    sys             ; thanks CP/M
         lxi     d,uireset       ; reset bold
