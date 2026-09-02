@@ -450,13 +450,175 @@ cpydfl:
         call    perr            ; display error message
         jmp     cpybox          ; go try again
 
-
-
+        ; Display all tagged files.  The first block of the file
+        ; is loaded and all 128 bytes are checked to see if any
+        ; byte is greater than 0x7f (127).  If so, the file is
+        ; displayed in hex dump fashion; otherwise as ascii.
+        ; Very rudimentary paging is also included
 uitype:
         cpi     'T'             ; display file?
         jnz     uiren           ; nope, try rename next
+        call    cnttags         ; get count of tagged files
+        cpi     0               ; is it zero?
+        jnz     typ1            ; no? go start renaming
+        lxi     d,typser        ; error message for no files selected
+        call    perr            ; print the error message in a flower box
+        jmp     usrlp0          ; redraw all
+typ1:
+        call    itertgs         ; get the next tagged file
+        cpi     0ffh            ; 0xff means no more tagged files
+        jz      usrlp0          ; all done
+typbox:
+        mvi     d,5             ; line 5
+        mvi     e,16            ; column 16
+        mvi     a,4             ; 3 blank lines
+        call    flower          ; draw a flower box
+        mvi     d,7             ; line 7
+        mvi     e,26            ; column 26
+        call    setcur          ; put cursor there
+        lxi     d,typmsg1       ; "Display file"... message
+        mvi     c,strout        ; print it
+        call    sys             ; syscall
+        call    prnname         ; print file name
+        lxi     d,uichyn        ; Yes/No
+        mvi     c,strout        ; print
+        call    sys             ; syscall
+        call    cin2uppr        ; get user choice
+        cpi     'N'             ; user said nope
+        jz      typ1            ; check next file
+        cpi     'Y'             ; user said yup
+        jz      typ2            ; oboy, here we go
+        jmp     typbox          ; something else
+typ2:
+        call    bldfcb          ; set up a file control block for source file
+        lxi     d,fcb1          ; get the FCB built from current file
+        mvi     c,fopen         ; open file syscall
+        call    sys             ; syscall
+        cpi     0ffh            ; good result is 0,1,2,3; 255 is a failure
+        jz      typoerr         ; jump to error message
+        lxi     d,fcb1          ; point to the file FCB
+        mvi     c,rdseq         ; read the first block
+        call    sys             ; syscall
+        cpi     0               ; non zero means error in read
+        jnz     typrfl          ; jump to read fail
+        sta     eofflag         ; store A in end-of-file flag
+        mvi     b,080h          ; set B with length of block
+        lxi     h,dma1          ; point H/L to DMA 1 area
+typ2a:                          ; loop through first block, check for non-printable
+        mov     a,m             ; get this char
+        ani     080h            ; We're gonna say that if bit 8 is set, this should be binary
+        jnz     typ4            ; assume binary - we'll do hex dump
+        inx     h               ; next char
+        dcr     b               ; decrement counter
+        jnz     typ2a           ; go check next
+        call    phdr            ; ASCII file - print "Displaying file".. header
+        xra     a               ; zero A
+        sta     typlins         ; zero line counter
+typ3a:                          ; continue without clear screen and header
+        mvi     b,080h          ; 128 bytes in block
+        lxi     h,dma1          ; move pointer back to start of buffer
+typ3b:                          ; ascii print this block
+        mov     a,m             ; get next pointed-to char
+        cpi     CR              ; is this a carriage return?
+        jnz     typ3c           ; nope, continue
+        lda     typlins         ; get line counter
+        inr     a               ; increment it
+        sta     typlins         ; save it
+        cpi     20              ; last line?
+        jnz     typ3c           ; keep printing
+        xra     a               ; zero A (continue message instead of end of file message)
+        call    pftr            ; print footer (press space to continue)
+        call    cin2uppr        ; wait for input
+        cpi     ' '             ; was it a space?
+        jnz     typ1            ; nope- next tagged file
+        xra     a               ; rezero A
+        sta     typlins         ; save that as line counter
+        call    phdr            ; print "Displaying file".. header
+typ3c:                          ; print char
+        mov     a,m             ; get char again
+        call    pchar           ; print it
+typ3d:                          ; skip printing this char
+        inx     h               ; next buffer pointer
+        dcr     b               ; decrement counter
+        jnz     typ3b           ; once more
+        lxi     d,fcb1          ; point to the file FCB
+        mvi     c,rdseq         ; read the next block
+        call    sys             ; syscall
+        cpi     0               ; non zero means error in read
+        jz      typ3a           ; go get next
+        call    pftr            ; print footer (A is already non-zero)
+        call    cin2uppr        ; wait for input
+        jmp     typ1            ; here we go again for next tagged file
+typ4:                           ; binary file - do hex dump
+        call    phdr            ; print "displaying file".. text
+        lxi     h,0             ; zero H/L register
+        shld    typofst         ; save it as byte offset
+        xra     a               ; zero A
+        sta     typlins         ; save as line counter (block, in this case)
+typ4b:                          ; continue without clear screen and header
+        call    hxhdr           ; print byte offset
+        mvi     b,080h          ; 128 bytes in block
+        lxi     h,dma1          ; move pointer back to start of buffer
+typ4c:                          ; print a line of hexdump
+        mvi     c,010h          ; 16 byte counter
+typ4c1:                         ; printing hex bytes
+        mov     a,m             ; get byte
+        call    phex            ; print it as a one-byte hex char
+        mvi     a,' '           ; space
+        call    pchar           ; print that space
+        inx     h               ; increment block byte pointer
+        dcr     c               ; decrement this line counter
+        jnz     typ4c1          ; next char in row
+        lxi     d,-16           ; rewind 16 bytes
+        dad     d               ; in current file block
+        mvi     c,010h          ; start over on byte counter
+typ4c2:                         ; printing printable ascii
+        mov     a,m             ; get char
+        call    hxchr           ; see if printable, otherwise '.'
+        call    pchar           ; print it
+        inx     h               ; next byte in buffer
+        dcr     b               ; decrement block byte counter
+        jz      typ4d           ; end of block
+        dcr     c               ; decrement this line
+        jnz     typ4c2          ; next byte
+        call    hxhdr           ; print line header for hex dump
+        jmp     typ4c           ; next row of hex
+typ4d:                          ; get next block of file
+        lda     typlins         ; get hex block count
+        inr     a               ; increment it
+        sta     typlins         ; save it
+        cpi     2               ; 3 per page
+        jnz     typ4e           ; not yet, read next block
+        xra     a               ; zero A
+        sta     typlins         ; save it as blocks displayed count
+        call    pftr            ; print footer line
+        call    cin2uppr        ; get input
+        cpi     ' '             ; a space?
+        jnz     typ1            ; all the way back to next tagged file
+        call    phdr            ; clear screen, print top line
+typ4e:                          ; get lines
+        lxi     d,fcb1          ; point to the file FCB
+        mvi     c,rdseq         ; read the next block
+        call    sys             ; syscall
+        cpi     0               ; non zero means error in read
+        jz      typ4b           ; go get next
+        call    pftr            ; print footer (A is non-zero, so print EOF)
+        call    cin2uppr        ; wait for input
+        jmp     typ1            ; back to next tagged file
+typoerr:
+        lxi     d,cpysr1        ; "Unable to open source..." msg
+        call    perr            ; display error message
+        jmp     typ1            ; go try again
+typrfl:                         ; read failure
+        jmp     typ1            ; go restart for now TODO
 
 
+
+        ; Rename all tagged files.  User will be prompted for a new filename
+        ; for each file.  If a file with the new name already
+        ; exists, file will not be copied, and user will be prompted for a
+        ; new name.  This is almost a clone of the copy file code; there could
+        ; definitely be stuff factored out into routine(s)
 uiren:
         cpi     'R'             ; rename file?
         jnz     uihelp          ; nope, try
@@ -487,7 +649,7 @@ renbox:
         call    sys             ; syscall
         call    cin2uppr        ; get user choice
         cpi     'N'             ; user said nope
-        jz      cpy1            ; check next file
+        jz      ren1            ; check next file
         cpi     'Y'             ; user said yup
         jz      ren2            ; oboy, here we go
         jmp     renbox          ; something else
@@ -549,11 +711,11 @@ renexst:
 renofl:
         lxi     d,cpysr1        ; "Unable to open source..." msg
         call    perr            ; display error message
-        jmp     renbox          ; go try again
+        jmp     ren1            ; go try again
 renfl:
         lxi     d,cpyder        ; "Unable to open source..." msg
         call    perr            ; display error message
-        jmp     renbox          ; go try again
+        jmp     ren1            ; go try again
 
 
 
@@ -933,6 +1095,9 @@ pnibprn:
 ; print hex (2 chars)
 ; IN char to print in register A
 phex:
+        push    b               ;
+        push    d               ;
+        push    h               ;
         push    psw             ; save A register
         rrc                     ;
         rrc                     ; start with upper nibble
@@ -943,6 +1108,9 @@ phex:
         push    psw             ; save it again
         call    pnib            ; print lower nibble
         pop     psw             ; final restore before return
+        pop     h               ;
+        pop     d               ;
+        pop     b               ;
         ret
 
 ; cin2uppr
@@ -1339,6 +1507,150 @@ rstline:
         pop     d
         call    setcur          ; replace the cursor
         ret
+
+;
+; phdr
+; Print "displaying file.." header
+;
+phdr:
+        push    psw             ;
+        push    b               ;
+        push    d               ;
+        push    h               ;
+        call    cls             ; clear the screen
+        lxi     d,uirevrs       ; set reverse video escape sequence
+        mvi     c,strout        ; print that to terminal
+        call    sys             ; syscall
+        mvi     c,80            ; 80 characters
+phdr1:
+        mvi     a,' '           ; space
+        call    pchar           ; print a space to fill the line with reverse video
+        dcr     c               ; next char
+        jnz     phdr1           ; go print it
+        mvi     d,1             ; back to line 1
+        mvi     e,1             ; column 1
+        call    setcur          ; put cursor there
+        lxi     d,typhdr        ; header for display page
+        mvi     c,strout        ; print that
+        call    sys             ; thanks CP/M
+        lxi     d,uibold        ; bold the filename
+        mvi     c,strout        ; print that
+        call    sys             ; syscall
+        call    prnname         ; print filename
+        lxi     d,uireset       ; reset bold
+        mvi     c,strout        ; tell terminal (print it)
+        call    sys             ; syscall
+        call    crlf            ; newline
+        pop     h               ;
+        pop     d               ;
+        pop     b               ;
+        pop     psw             ;
+        ret                     ;
+
+;
+; pftr
+; Print "space to continue" footer for file display
+; IN:
+;       A - zero means print "space to continue"
+;         - nonzero means print "end of file"
+pftr:
+        push    b               ;
+        push    d               ;
+        push    h               ;
+        push    psw             ;
+        lxi     d,uirevrs       ; set reverse video escape sequence
+        mvi     c,strout        ; print that to terminal
+        call    sys             ; syscall
+        mvi     d,23            ; bottom row
+        mvi     e,1             ; first column
+        call    setcur          ; move cursor there
+        mvi     c,80            ; 80 characters
+pftr1:
+        mvi     a,' '           ; space
+        call    pchar           ; print a space to fill the line with reverse video
+        dcr     c               ; next char
+        jnz     pftr1           ;
+        mvi     d,23            ; go back to bottom
+        mvi     e,1             ; left corner
+        call    setcur          ; put curser back
+        pop     psw             ; get A back
+        cpi     0               ; was it zero?
+        jz      pftr2           ; yup, not end of file footer
+        lxi     d,typend        ; end of file message
+        jmp     pftr3           ; go print
+pftr2:                          ;
+        lxi     d,typftr        ; footer for display page
+pftr3:
+        mvi     c,strout        ; print that
+        call    sys             ; thanks CP/M
+        lxi     d,uireset       ; reset bold
+        mvi     c,strout        ; tell terminal (print it)
+        call    sys             ; syscall
+        call    crlf            ; newline
+        pop     h               ;
+        pop     d               ;
+        pop     b               ;
+        ret                     ;
+
+;
+; hxhdr
+; print hex editor line starter (byte offset)
+;
+hxhdr:
+        push    psw             ;
+        push    b               ;
+        push    d               ;
+        push    h               ;
+        call    crlf            ; newline
+        lxi     d,uibold        ; bold type
+        mvi     c,strout        ; print that
+        call    sys             ; syscall
+        lhld    typofst         ; get byte offset
+        mov     a,h             ; upper byte of offset
+        call    phex            ; print as hex
+        mov     a,l             ; lower byte of offset
+        call    phex            ; that as hex, too
+        mvi     a,' '           ; space
+        call    pchar           ; print that space
+        call    pchar           ; hey, print another while we're at it
+        lxi     d,uireset       ; clear bold
+        mvi     c,strout        ; print that
+        call    sys             ; syscall
+        lhld    typofst         ; get byte offset
+        mvi     d,0             ; zero upper byte
+        mvi     e,010h          ; 16 more bytes
+        dad     d               ; add 16 to byte offset
+        shld    typofst         ; save it
+        pop     h               ;
+        pop     d               ;
+        pop     b               ;
+        pop     psw             ;
+        ret                     ;
+
+;
+; hxchr
+; print "printable" characters in hex dump
+; IN:
+;       A - byte to print
+; OUT:
+;       A - ascii of char, or '.' if unprintable
+;
+hxchr:
+        push    b               ;
+        push    d               ;
+        push    h               ;
+        cpi     ' '             ; anything below a space is unprintable
+        jm      hxcr1           ; return a '.'
+        cpi     '~'             ; anything above a tilde is unprintable
+        jp      hxcr1           ; return a '.'
+        jmp     hxcret          ; return original A value
+hxcr1:                          ; returning a '.'
+        mvi     a,'.'           ; set return char
+hxcret:                         ;
+        pop     h               ;
+        pop     d               ;
+        pop     b               ;
+        ret                     ;
 
 ;
 ; perr
@@ -1948,12 +2260,14 @@ fndstr2 db      ' (total of $'
 fndstr3 db      ' files, $'
 fndstr4 db      ' tagged)$'
 uibold  db      01bh,'[1m$'
+uirevrs db      01bh,'[7m$'
 uireset db      01bh,'[0m$'
 uistr1  db      'Currently selected file (N/P-next/previous,Space-tag/untag): $'
 uistr2  db      'Command(D-delete,C-copy,T-display,R-rename,H-help,X-exit)? $'
 delser  db      'Tag one or more files for deletion!$'
 cpyser  db      '   Tag one or more files to copy!$'
 renser  db      '  Tag one or more files to rename!$'
+typser  db      '  Tag one or more files to display!$'
 cpyeer  db      '  DESTINATION FILE ALREADY EXISTS!$'
 cpysr1  db      '    UNABLE TO OPEN SOURCE FILE!$'
 cpyder  db      '  UNABLE TO OPEN DESTINATION FILE!$'
@@ -1961,10 +2275,14 @@ render  db      '        UNABLE TO RENAME FILE!$'
 badfnm  db      '          BAD FILE NAME$'
 logerr  db      '     DISK x: IS NOT AVAILABLE!$'
 cpyok   db      ' blocks copied.$'
+typhdr  db      'Displaying file $'
+typftr  db      'Press <SPACE> to continue, any other to exit$'
+typend  db      'End of file, any key to continue$'
 contmsg db      'Press any key to continue$'
 delmsg  db      'Delete file $'
 cpymsg1 db      'Copy file $'
 renmsg1 db      'Rename file $'
+typmsg1 db      'Display file $'
 cpymsg2 db      'Enter new filename> $'
 uichyn  db      ' (Y/N)? $'
 uichyna db      ' (Y/N/A)? $'
@@ -1988,6 +2306,9 @@ flsel   ds      1               ; selected file number
 flwrtmp ds      1               ; temporary storage for flower box
 drvtmp  ds      1               ; drive letter storage during drive change
 fnstate ds      1               ; get filename state
+typlins ds      1               ; line counter for file display
+typcols ds      1               ; column counter for file display
+typofst ds      2               ; hex dump offset for file display
 blkcnt  ds      2               ; generic block counter
 tmpmsg  ds      36              ; temp message buffer
 usrinp  ds      uinplen         ; user input buffer
