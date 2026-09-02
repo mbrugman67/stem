@@ -40,6 +40,11 @@
 ;****************************************************
 
 ;****************************************************
+; Is debug enabled?
+;****************************************************
+DEBUG   equ     0               ; any non-zero enables debug code
+
+;****************************************************
 ; Entry point for FDOS, BIOS, CP/M system calls
 ;****************************************************
 sys     equ     5               ; entry point for system (dos)
@@ -153,9 +158,11 @@ uinplen equ     40              ; length of user input buffer
         mvi     c,strout        ; load reg C with command to print string
         lxi     d,welcom3       ; point to address of welcome #3 string
         call    sys             ; call the system function to print string
-        mvi     c,conin         ; wait for keypress
-        call    sys             ; waiting, key will be in A
         call    tstdrvs         ; "log in" all hardware drives, just to check validity
+        call    cin2uppr        ; get input
+        cpi     'H'             ; did user hit "H"?
+        jnz     usrlp0          ; nope
+        call    help            ; show help
 
         ; start of main loop.  Entering at 'usrlp0' will result in a total
         ; re-read of filenames and screen redraw.  Entering at 'uinext' will
@@ -175,7 +182,10 @@ uinext:                         ; user UI interaction loop
         jmp     cleanup         ; get outta here
 
 cont:
-        ;call    prnvars         ; print debug stuffs on line 2
+        IF DEBUG
+        call    prnvars         ; print debug stuffs on line 2
+        ENDIF
+
         call    prnui           ; print user interface info & menu
         call    cin2uppr        ; get user input (force to uppercase)
 
@@ -801,6 +811,7 @@ cleanup:
 ;*************************************************
 ; Debug/Test subroutines
 ;*************************************************
+IF DEBUG
 ;
 ; prnvars
 prnvars:
@@ -850,6 +861,7 @@ dbgl2:
         pop     d               ;
         pop     h               ;
         ret
+ENDIF
 
 ;*************************************************
 ; Start of subroutines
@@ -886,9 +898,160 @@ tstd1:
         lda     drvtmp          ; go back and get the drive number
         inr     a               ; increment
         sta     drvtmp          ; save it
-        cpi     4               ; is it 4 yet?
+        cpi     5               ; repeat drives A through D
         rz                      ; if so, we're done; return to caller
         jmp     tstd1           ; go search on next drive
+
+;
+; help
+; Display help information
+;
+help:
+        call    cls             ; clear screen
+        lxi     d,help001       ; help message
+        mvi     c,strout        ; display string
+        call    sys             ; syscall
+        call    crlf            ; newline
+        lxi     d,help002       ; help message
+        mvi     c,strout        ; display string
+        call    sys             ; syscall
+        call    crlf            ; newline
+        call    crlf            ; extra newline
+        lxi     d,help003       ; help message
+        mvi     c,strout        ; display string
+        call    sys             ; syscall
+        call    crlf            ; newline
+        lxi     d,help004       ; help message
+        mvi     c,strout        ; display string
+        call    sys             ; syscall
+        call    crlf            ; newline
+        lxi     d,help005       ; help message
+        mvi     c,strout        ; display string
+        call    sys             ; syscall
+        call    crlf            ; newline
+        lxi     d,help006       ; help message
+        mvi     c,strout        ; display string
+        call    sys             ; syscall
+        call    crlf            ; newline
+        lxi     d,help007       ; help message
+        mvi     c,strout        ; display string
+        call    sys             ; syscall
+        call    crlf            ; newline
+        lxi     d,help008       ; help message
+        mvi     c,strout        ; display string
+        call    sys             ; syscall
+        call    crlf            ; newline
+        lxi     d,help009       ; help message
+        mvi     c,strout        ; display string
+        call    sys             ; syscall
+        call    crlf            ; newline
+        lxi     d,help010       ; help message
+        mvi     c,strout        ; display string
+        call    sys             ; syscall
+        call    crlf            ; newline
+        call    crlf            ; extra newline
+        lxi     d,help011       ; help message
+        mvi     c,strout        ; display string
+        call    sys             ; syscall
+        call    crlf            ; newline
+        lxi     d,help012       ; help message
+        mvi     c,strout        ; display string
+        call    sys             ; syscall
+        call    crlf            ; newline
+        lxi     d,help013       ; help message
+        mvi     c,strout        ; display string
+        call    sys             ; syscall
+        call    crlf            ; newline
+        lxi     d,help014       ; help message
+        mvi     c,strout        ; display string
+        call    sys             ; syscall
+        call    crlf            ; newline
+        lxi     d,help015       ; help message
+        mvi     c,strout        ; display string
+        call    sys             ; syscall
+        call    crlf            ; newline
+        lxi     d,help016       ; help message
+        mvi     c,strout        ; display string
+        call    sys             ; syscall
+        call    crlf            ; newline
+        lxi     d,help017       ; help message
+        mvi     c,strout        ; display string
+        call    sys             ; syscall
+        call    crlf            ; newline
+        lxi     d,help018       ; help message
+        mvi     c,strout        ; display string
+        call    sys             ; syscall
+        call    crlf            ; newline
+        lxi     d,help019       ; help message
+        mvi     c,strout        ; display string
+        call    sys             ; syscall
+        call    crlf            ; newline
+        lxi     d,help020       ; help message
+        mvi     c,strout        ; display string
+        call    sys             ; syscall
+        call    crlf            ; newline
+        lxi     d,contmsg       ; continue message
+        mvi     c,strout        ; display string
+        call    sys             ; syscall
+        call    cin2uppr        ; pause for input
+
+        call    cls             ; clear screen
+        lxi     d,help021       ; help message
+        mvi     c,strout        ; display string
+        call    sys             ; syscall
+        call    crlf            ; newline
+        lxi     d,help022       ; help message
+        mvi     c,strout        ; display string
+        call    sys             ; syscall
+        call    crlf            ; newline
+        call    crlf            ; extra newline
+        lxi     d,help023       ; help message
+        mvi     c,strout        ; display string
+        call    sys             ; syscall
+        call    crlf            ; newline
+        lxi     d,help024       ; help message
+        mvi     c,strout        ; display string
+        call    sys             ; syscall
+        call    crlf            ; newline
+        lxi     d,help025       ; help message
+        mvi     c,strout        ; display string
+        call    sys             ; syscall
+        call    crlf            ; newline
+        lxi     d,help026       ; help message
+        mvi     c,strout        ; display string
+        call    sys             ; syscall
+        call    crlf            ; newline
+        lxi     d,help027       ; help message
+        mvi     c,strout        ; display string
+        call    sys             ; syscall
+        call    crlf            ; newline
+        lxi     d,help028       ; help message
+        mvi     c,strout        ; display string
+        call    sys             ; syscall
+        call    crlf            ; newline
+        lxi     d,help029       ; help message
+        mvi     c,strout        ; display string
+        call    sys             ; syscall
+        call    crlf            ; newline
+        lxi     d,help030       ; help message
+        mvi     c,strout        ; display string
+        call    sys             ; syscall
+        call    crlf            ; newline
+        call    crlf            ; extra newline
+        lxi     d,help031       ; help message
+        mvi     c,strout        ; display string
+        call    sys             ; syscall
+        call    crlf            ; newline
+        lxi     d,help032       ; help message
+        mvi     c,strout        ; display string
+        call    sys             ; syscall
+        call    crlf            ; newline
+        lxi     d,contmsg       ; continue message
+        mvi     c,strout        ; display string
+        call    sys             ; syscall
+        call    cin2uppr        ; pause for input
+
+        ret                     ;
 
 ;
 ; isdskok
@@ -2290,7 +2453,38 @@ logmsg  db      'Select new disk letter: $'
 schfcb  db      0,'???????????',0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0
 blnkfcb db      0,'           ',0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0
 mworkng db      'Enumerating files in drive $'
-help1   db      'STEM - a basic file manager for CP/M 2.2 on Altair 8800',CR,LF,CR,LF,'$'
+help001 db      'STEM - a basic file manager for CP/M 2.2 on Altair 8800$'
+help002 db      'which allows a user to copy, delete, delete, and rename files.$'
+help003 db      'When started, the screen is divided into 3 horizontal sections:$'
+help004 db      '+ Top line - this shows which drive is currently being read,$'
+help005 db      '  how many files are on the drive, and how many are tagged.$'
+help006 db      '+ Middle section is a list of all files on the drive.  Each$'
+help007 db      '  filename is preceded with "[ ]" to show tag status.  For$'
+help008 db      '  example: [ ]STEM.COM$'
+help009 db      '+ Bottom 2 lines show the currently selected file and commands.$'
+help010 db      '  If supported by terminal, selected filename is in bold.$'
+help011 db      'Using STEM$'
+help012 db      '+ All operations are performed on tagged files.  To tag a$'
+help013 db      'file, use the "N" and "P" keys to select desired file.  As$'
+help014 db      'the "N" and "P" keys are pressed, the selected filename will$'
+help015 db      'be updated.  When the desired file is selected, press the$'
+help016 db      '<SPACE> bar to tag/untag that file.  When tagged, the filename$'
+help017 db      'in the middle section will have an "X" in the tagbox to show$'
+help018 db      'it is tagged.  For example: [X]STEM.COM$'
+help019 db      'Also, the tagged file count in the top line will update to show$'
+help020 db      'how many files are tagged.$'
+help021 db      '+ Commands$'
+help022 db      '  + D - this will delete all tagged files.  User will be$'
+help023 db      '    prompted to confirm each file deletion.  Confirming with$'
+help024 db      '    "A" will result in all tagged files being deleted.$'
+help025 db      '  + C - this will copy all tagged files.  User will be prompted$'
+help026 db      '    to enter destination filename.  A file may be copied to$'
+help027 db      '    another drive by specifying in the filename.  For example$'
+help028 db      '    "A:STEM.COM" will copy the file to drive A$'
+help029 db      '  + T - this will display all tagged files.  ASCII files will$'
+help030 db      '    displayed as text while other files displayed as hex dump.$'
+help031 db      '  + R - this will rename all tagged files.  User will be$'
+help032 db      '    prompted for a new name for each file.$'
 
 ;***************************************************
 ; START OF VARIABLE DATA AREA
