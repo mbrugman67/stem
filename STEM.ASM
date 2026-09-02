@@ -450,8 +450,11 @@ cpydfl:
         call    perr            ; display error message
         jmp     cpybox          ; go try again
 
-
-
+        ; Display all tagged files.  The first block of the file
+        ; is loaded and all 128 bytes are checked to see if any
+        ; byte is greater than 0x7f (127).  If so, the file is
+        ; displayed in hex dump fashion; otherwise as ascii.
+        ; Very rudimentary paging is also included
 uitype:
         cpi     'T'             ; display file?
         jnz     uiren           ; nope, try rename next
@@ -602,11 +605,6 @@ typ4e:                          ; get lines
         call    pftr            ; print footer (A is non-zero, so print EOF)
         call    cin2uppr        ; wait for input
         jmp     typ1            ; back to next tagged file
-
-
-
-
-
 typoerr:
         lxi     d,cpysr1        ; "Unable to open source..." msg
         call    perr            ; display error message
