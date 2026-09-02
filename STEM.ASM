@@ -501,22 +501,16 @@ typ2:
         sta     eofflag         ; store A in end-of-file flag
         mvi     b,080h          ; set B with length of block
         lxi     h,dma1          ; point H/L to DMA 1 area
-        mvi     c,0             ; set "this is binary" to false
 typ2a:                          ; loop through first block, check for non-printable
         mov     a,m             ; get this char
         ani     080h            ; We're gonna say that if bit 8 is set, this should be binary
-        jnz     typ2b           ; go set flag now
+        jnz     typ4            ; assume binary - we'll do hex dump
         inx     h               ; next char
         dcr     b               ; decrement counter
         jnz     typ2a           ; go check next
-        jmp     typ3            ; decide now if ascii or binary
-typ2b:                          ; binary file
-        mvi     c,0ffh          ; set the flag
-typ3:                           ; get ready to run pager or hex dump
-        call    phdr            ; print "Displaying file".. header
+        call    phdr            ; ASCII file - print "Displaying file".. header
         xra     a               ; zero A
         sta     typlins         ; zero line counter
-        ; TODO - ADD JUMP FOR BINARY HERE
 typ3a:                          ; continue without clear screen and header
         mvi     b,080h          ; 128 bytes in block
         lxi     h,dma1          ; move pointer back to start of buffer
@@ -549,12 +543,65 @@ typ3d:                          ; skip printing this char
         call    sys             ; syscall
         cpi     0               ; non zero means error in read
         jz      typ3a           ; go get next
-        mvi     a,0ffh          ; non zero for end of file message
-        call    pftr            ; print footer
+        call    pftr            ; print footer (A is already non-zero)
         call    cin2uppr        ; wait for input
         jmp     typ1            ; here we go again for next tagged file
-
-
+typ4:                           ; binary file - do hex dump
+        call    phdr            ; print "displaying file".. text
+        lxi     h,0             ; zero H/L register
+        shld    typofst         ; save it as byte offset
+typ4b:                          ; continue without clear screen and header
+        call    hxhdr           ; print byte offset
+        mvi     b,080h          ; 128 bytes in block
+        lxi     h,dma1          ; move pointer back to start of buffer
+        xra     a               ; zero A
+        sta     typlins         ; save as line counter (block, in this case)
+typ4c:                          ; print a line of hexdump
+        mvi     c,010h          ; 16 byte counter
+typ4c1:                         ; printing hex bytes
+        mov     a,m             ; get byte
+        call    phex            ; print it as a one-byte hex char
+        mvi     a,' '           ; space
+        call    pchar           ; print that space
+        inx     h               ; increment block byte pointer
+        dcr     c               ; decrement this line counter
+        jnz     typ4c1          ; next char in row
+        lxi     d,-16           ; rewind 16 bytes
+        dad     d               ; in current file block
+        mvi     c,010h          ; start over on byte counter
+typ4c2:                         ; printing printable ascii
+        mov     a,m             ; get char
+        call    hxchr           ; print if printable, otherwise '.'
+        call    pchar           ; print it
+        inx     h               ; next byte in buffer
+        dcr     b               ; decrement block byte counter
+        jz      typ4d           ; end of block
+        dcr     c               ; decrement this line
+        jnz     typ4c2          ; next byte
+        call    hxhdr           ; print line header for hex dump
+        jmp     typ4c           ; next row of hex
+typ4d:                          ; get next block of file
+        lda     typlins         ; get hex block count
+        inr     a               ; increment it
+        sta     typlins         ; save it
+        cpi     3               ; 3 per page
+        jz      typ4e           ; did our three, clear out
+        xra     a               ; clear A
+        sta     typlins         ; zero count
+        call    pftr            ; print footer line
+        call    cin2uppr        ; get input
+        cpi     ' '             ; a space?
+        jnz     typ1            ; all the way back to next tagged file
+        call    phdr            ; clear screen, print top line
+typ4e:                          ; get lines
+        lxi     d,fcb1          ; point to the file FCB
+        mvi     c,rdseq         ; read the next block
+        call    sys             ; syscall
+        cpi     0               ; non zero means error in read
+        jz      typ4b           ; go get next
+        call    pftr            ; print footer (A is non-zero, so print EOF)
+        call    cin2uppr        ; wait for input
+        jmp     typ1            ; back to next tagged file
 
 
 
@@ -1050,6 +1097,9 @@ pnibprn:
 ; print hex (2 chars)
 ; IN char to print in register A
 phex:
+        push    b               ;
+        push    d               ;
+        push    h               ;
         push    psw             ; save A register
         rrc                     ;
         rrc                     ; start with upper nibble
@@ -1060,6 +1110,9 @@ phex:
         push    psw             ; save it again
         call    pnib            ; print lower nibble
         pop     psw             ; final restore before return
+        pop     h               ;
+        pop     d               ;
+        pop     b               ;
         ret
 
 ; cin2uppr
@@ -1541,7 +1594,65 @@ pftr3:
         pop     b               ;
         ret                     ;
 
+;
+; hxhdr
+; print hex editor line starter (byte offset)
+;
+hxhdr:
+        push    psw             ;
+        push    b               ;
+        push    d               ;
+        push    h               ;
+        call    crlf            ; newline
+        lxi     d,uibold        ; bold type
+        mvi     c,strout        ; print that
+        call    sys             ; syscall
+        lhld    typofst         ; get byte offset
+        mov     a,h             ; upper byte of offset
+        call    phex            ; print as hex
+        mov     a,l             ; lower byte of offset
+        call    phex            ; that as hex, too
+        mvi     a,' '           ; space
+        call    pchar           ; print that space
+        call    pchar           ; hey, print another while we're at it
+        lxi     d,uireset       ; clear bold
+        mvi     c,strout        ; print that
+        call    sys             ; syscall
+        lhld    typofst         ; get byte offset
+        mvi     d,0             ; zero upper byte
+        mvi     e,010h          ; 16 more bytes
+        dad     d               ; add 16 to byte offset
+        shld    typofst         ; save it
+        pop     h               ;
+        pop     d               ;
+        pop     b               ;
+        pop     psw             ;
+        ret                     ;
 
+;
+; hxchr
+; print "printable" characters in hex dump
+; IN:
+;       A - byte to print
+; OUT:
+;       A - ascii of char, or '.' if unprintable
+;
+hxchr:
+        push    b               ;
+        push    d               ;
+        push    h               ;
+        cpi     ' '             ; anything below a space is unprintable
+        jm      hxcr1           ; return a '.'
+        cpi     '~'             ; anything above a tilde is unprintable
+        jp      hxcr1           ; return a '.'
+        jmp     hxcret          ; return original A value
+hxcr1:                          ; returning a '.'
+        mvi     a,'.'           ; set return char
+hxcret:                         ;
+        pop     h               ;
+        pop     d               ;
+        pop     b               ;
+        ret                     ;
 
 ;
 ; perr
@@ -2199,6 +2310,7 @@ drvtmp  ds      1               ; drive letter storage during drive change
 fnstate ds      1               ; get filename state
 typlins ds      1               ; line counter for file display
 typcols ds      1               ; column counter for file display
+typofst ds      2               ; hex dump offset for file display
 blkcnt  ds      2               ; generic block counter
 tmpmsg  ds      36              ; temp message buffer
 usrinp  ds      uinplen         ; user input buffer
