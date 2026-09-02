@@ -550,12 +550,12 @@ typ4:                           ; binary file - do hex dump
         call    phdr            ; print "displaying file".. text
         lxi     h,0             ; zero H/L register
         shld    typofst         ; save it as byte offset
+        xra     a               ; zero A
+        sta     typlins         ; save as line counter (block, in this case)
 typ4b:                          ; continue without clear screen and header
         call    hxhdr           ; print byte offset
         mvi     b,080h          ; 128 bytes in block
         lxi     h,dma1          ; move pointer back to start of buffer
-        xra     a               ; zero A
-        sta     typlins         ; save as line counter (block, in this case)
 typ4c:                          ; print a line of hexdump
         mvi     c,010h          ; 16 byte counter
 typ4c1:                         ; printing hex bytes
@@ -571,7 +571,7 @@ typ4c1:                         ; printing hex bytes
         mvi     c,010h          ; start over on byte counter
 typ4c2:                         ; printing printable ascii
         mov     a,m             ; get char
-        call    hxchr           ; print if printable, otherwise '.'
+        call    hxchr           ; see if printable, otherwise '.'
         call    pchar           ; print it
         inx     h               ; next byte in buffer
         dcr     b               ; decrement block byte counter
@@ -584,10 +584,10 @@ typ4d:                          ; get next block of file
         lda     typlins         ; get hex block count
         inr     a               ; increment it
         sta     typlins         ; save it
-        cpi     3               ; 3 per page
-        jz      typ4e           ; did our three, clear out
-        xra     a               ; clear A
-        sta     typlins         ; zero count
+        cpi     2               ; 3 per page
+        jnz     typ4e           ; not yet, read next block
+        xra     a               ; zero A
+        sta     typlins         ; save it as blocks displayed count
         call    pftr            ; print footer line
         call    cin2uppr        ; get input
         cpi     ' '             ; a space?
