@@ -498,6 +498,7 @@ typ2:
         call    sys             ; syscall
         cpi     0               ; non zero means error in read
         jnz     typrfl          ; jump to read fail
+        sta     eofflag         ; store A in end-of-file flag
         mvi     b,080h          ; set B with length of block
         lxi     h,dma1          ; point H/L to DMA 1 area
         mvi     c,0             ; set "this is binary" to false
@@ -511,8 +512,52 @@ typ2a:                          ; loop through first block, check for non-printa
         jmp     typ3            ; decide now if ascii or binary
 typ2b:                          ; binary file
         mvi     c,0ffh          ; set the flag
-typ3                            ; get ready to run pager or hex dump
-        rst     7
+typ3:                           ; get ready to run pager or hex dump
+        call    phdr            ; print "Displaying file".. header
+        xra     a               ; zero A
+        sta     typlins         ; zero line counter
+        ; TODO - ADD JUMP FOR BINARY HERE
+typ3a:                          ; continue without clear screen and header
+        mvi     b,080h          ; 128 bytes in block
+        lxi     h,dma1          ; move pointer back to start of buffer
+typ3b:                          ; ascii print this block
+        mov     a,m             ; get next pointed-to char
+        cpi     CR              ; is this a carriage return?
+        jnz     typ3c           ; nope, continue
+        lda     typlins         ; get line counter
+        inr     a               ; increment it
+        sta     typlins         ; save it
+        cpi     20              ; last line?
+        jnz     typ3c           ; keep printing
+        xra     a               ; zero A (continue message instead of end of file message)
+        call    pftr            ; print footer (press space to continue)
+        call    cin2uppr        ; wait for input
+        cpi     ' '             ; was it a space?
+        jnz     typ1            ; nope- next tagged file
+        xra     a               ; rezero A
+        sta     typlins         ; save that as line counter
+        call    phdr            ; print "Displaying file".. header
+typ3c:                          ; print char
+        mov     a,m             ; get char again
+        call    pchar           ; print it
+typ3d:                          ; skip printing this char
+        inx     h               ; next buffer pointer
+        dcr     b               ; decrement counter
+        jnz     typ3b           ; once more
+        lxi     d,fcb1          ; point to the file FCB
+        mvi     c,rdseq         ; read the next block
+        call    sys             ; syscall
+        cpi     0               ; non zero means error in read
+        jz      typ3a           ; go get next
+        mvi     a,0ffh          ; non zero for end of file message
+        call    pftr            ; print footer
+        call    cin2uppr        ; wait for input
+        jmp     typ1            ; here we go again for next tagged file
+
+
+
+
+
 
 
 typoerr:
@@ -1413,6 +1458,77 @@ rstline:
         ret
 
 ;
+; phdr
+; Print "displaying file.." header
+;
+phdr:
+        push    psw             ;
+        push    b               ;
+        push    d               ;
+        push    h               ;
+        call    cls             ; clear the screen
+        lxi     d,uirevrs       ; set reverse video escape sequence
+        mvi     c,strout        ; print that to terminal
+        call    sys             ; syscall
+        lxi     d,typhdr        ; header for display page
+        mvi     c,strout        ; print that
+        call    sys             ; thanks CP/M
+        lxi     d,uibold        ; bold the filename
+        mvi     c,strout        ; print that
+        call    sys             ; syscall
+        call    prnname         ; print filename
+        lxi     d,uireset       ; reset bold
+        mvi     c,strout        ; tell terminal (print it)
+        call    sys             ; syscall
+        call    crlf            ; newline
+        pop     h               ;
+        pop     d               ;
+        pop     b               ;
+        pop     psw             ;
+        ret                     ;
+
+;
+; pftr
+; Print "space to continue" footer for file display
+; IN:
+;       A - zero means print "space to continue"
+;         - nonzero means print "end of file"
+pftr:
+        push    b               ;
+        push    d               ;
+        push    h               ;
+        push    psw             ;
+        mvi     d,23            ; bottom row
+        mvi     e,0             ; first column
+        call    setcur          ; move cursor there
+        lxi     d,uirevrs       ; set reverse video escape sequence
+        mvi     c,strout        ; print that to terminal
+        call    sys             ; syscall
+        lxi     d,uibold        ; bold the filename
+        mvi     c,strout        ; print that
+        call    sys             ; syscall
+        pop     psw             ; get A back
+        cpi     0               ; was it zero?
+        jz      pftr1           ; yup, not end of file footer
+        lxi     d,typend        ; end of file message
+        jmp     pftr2           ; go print
+pftr1:                          ;
+        lxi     d,typftr        ; footer for display page
+pftr2:
+        mvi     c,strout        ; print that
+        call    sys             ; thanks CP/M
+        lxi     d,uireset       ; reset bold
+        mvi     c,strout        ; tell terminal (print it)
+        call    sys             ; syscall
+        call    crlf            ; newline
+        pop     h               ;
+        pop     d               ;
+        pop     b               ;
+        ret                     ;
+
+
+
+;
 ; perr
 ; Print error message in flower box.  One line of message
 ; IN:
@@ -2020,6 +2136,7 @@ fndstr2 db      ' (total of $'
 fndstr3 db      ' files, $'
 fndstr4 db      ' tagged)$'
 uibold  db      01bh,'[1m$'
+uirevrs db      01bh,'[7m$'
 uireset db      01bh,'[0m$'
 uistr1  db      'Currently selected file (N/P-next/previous,Space-tag/untag): $'
 uistr2  db      'Command(D-delete,C-copy,T-display,R-rename,H-help,X-exit)? $'
@@ -2034,6 +2151,9 @@ render  db      '        UNABLE TO RENAME FILE!$'
 badfnm  db      '          BAD FILE NAME$'
 logerr  db      '     DISK x: IS NOT AVAILABLE!$'
 cpyok   db      ' blocks copied.$'
+typhdr  db      'Displaying file $'
+typftr  db      'Press <SPACE> to continue, any other to exit$'
+typend  db      'End of file, any key to continue$'
 contmsg db      'Press any key to continue$'
 delmsg  db      'Delete file $'
 cpymsg1 db      'Copy file $'
@@ -2062,6 +2182,8 @@ flsel   ds      1               ; selected file number
 flwrtmp ds      1               ; temporary storage for flower box
 drvtmp  ds      1               ; drive letter storage during drive change
 fnstate ds      1               ; get filename state
+typlins ds      1               ; line counter for file display
+typcols ds      1               ; column counter for file display
 blkcnt  ds      2               ; generic block counter
 tmpmsg  ds      36              ; temp message buffer
 usrinp  ds      uinplen         ; user input buffer
