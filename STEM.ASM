@@ -730,22 +730,9 @@ renfl:
 
 
 uihelp:
-        cpi     'H'
-        jnz     uilog
-        mvi     d,16
-        mvi     e,1
-        call    setcur
-uihlp1:
-        call    itertgs
-        cpi     0
-        jnz     uihlp2
-        call    prnname
-        mvi     a,' '
-        call    pchar
-        jmp     uihlp1
-uihlp2:
-        mvi     c,conin
-        call    sys
+        cpi     'H'             ; User wants help info
+        jnz     uilog           ; nope, go to log drive
+        call    help            ; go display help
         jmp     usrlp0
 
         ; "Log into another disk" - in other words, change disk.  User
@@ -912,7 +899,56 @@ help:
         mvi     c,strout        ; display string
         call    sys             ; syscall
         call    crlf            ; newline
-        lxi     d,help002       ; help message
+        call    crlf            ; extra newline
+        lxi     d,shlp001       ; short help message
+        mvi     c,strout        ; display string
+        call    sys             ; syscall
+        call    crlf            ; newline
+        lxi     d,shlp002       ; short help message
+        mvi     c,strout        ; display string
+        call    sys             ; syscall
+        call    crlf            ; newline
+        lxi     d,shlp003       ; short help message
+        mvi     c,strout        ; display string
+        call    sys             ; syscall
+        call    crlf            ; newline
+        lxi     d,shlp004       ; short help message
+        mvi     c,strout        ; display string
+        call    sys             ; syscall
+        call    crlf            ; newline
+        lxi     d,shlp005       ; short help message
+        mvi     c,strout        ; display string
+        call    sys             ; syscall
+        call    crlf            ; newline
+        lxi     d,shlp006       ; short help message
+        mvi     c,strout        ; display string
+        call    sys             ; syscall
+        call    crlf            ; newline
+        call    crlf            ; extra newline
+        lxi     d,shlp007       ; short help message
+        mvi     c,strout        ; display string
+        call    sys             ; syscall
+        call    crlf            ; newline
+        lxi     d,shlp008       ; short help message
+        mvi     c,strout        ; display string
+        call    sys             ; syscall
+        call    crlf            ; newline
+        lxi     d,shlp009       ; short help message
+        mvi     c,strout        ; display string
+        call    sys             ; syscall
+        call    crlf            ; newline
+        lxi     d,shlp010       ; short help message
+        mvi     c,strout        ; display string
+        call    sys             ; syscall
+        call    crlf            ; newline
+        call    crlf            ; extra newline
+        lxi     d,contmsg       ; continue message
+        mvi     c,strout        ; display string
+        call    sys             ; syscall
+        call    cin2uppr        ; pause for input
+
+        call    cls             ; clear screen
+        lxi     d,help001       ; help message
         mvi     c,strout        ; display string
         call    sys             ; syscall
         call    crlf            ; newline
@@ -990,12 +1026,18 @@ help:
         mvi     c,strout        ; display string
         call    sys             ; syscall
         call    crlf            ; newline
+        call    crlf            ; extra newline
         lxi     d,contmsg       ; continue message
         mvi     c,strout        ; display string
         call    sys             ; syscall
         call    cin2uppr        ; pause for input
 
         call    cls             ; clear screen
+        lxi     d,help001       ; help message
+        mvi     c,strout        ; display string
+        call    sys             ; syscall
+        call    crlf            ; newline
+        call    crlf            ; extra newline
         lxi     d,help021       ; help message
         mvi     c,strout        ; display string
         call    sys             ; syscall
@@ -1004,7 +1046,6 @@ help:
         mvi     c,strout        ; display string
         call    sys             ; syscall
         call    crlf            ; newline
-        call    crlf            ; extra newline
         lxi     d,help023       ; help message
         mvi     c,strout        ; display string
         call    sys             ; syscall
@@ -1037,7 +1078,6 @@ help:
         mvi     c,strout        ; display string
         call    sys             ; syscall
         call    crlf            ; newline
-        call    crlf            ; extra newline
         lxi     d,help031       ; help message
         mvi     c,strout        ; display string
         call    sys             ; syscall
@@ -1046,11 +1086,15 @@ help:
         mvi     c,strout        ; display string
         call    sys             ; syscall
         call    crlf            ; newline
+        lxi     d,help033       ; help message
+        mvi     c,strout        ; display string
+        call    sys             ; syscall
+        call    crlf            ; newline
+        call    crlf            ; extra newline
         lxi     d,contmsg       ; continue message
         mvi     c,strout        ; display string
         call    sys             ; syscall
         call    cin2uppr        ; pause for input
-
         ret                     ;
 
 ;
@@ -2412,7 +2456,7 @@ canary  db      0beh,0efh,0cah,0feh
 errcan  db      'ERROR - Stack is corrupt!',CR,LF,'$'
 flowr1  db      '+--------------------------------------------------+$'
 flowr2  db      '|                                                  |$'
-stemver db      'STEM v0.9.0$'
+stemver db      'STEM v0.9.3$'
 welcom1 db      'An Altair 8800 File Manager$'
 welcom2 db      '2026 Mattydyne Heavy Industries$'
 welcom3 db      01bh,'[1m"H" for help, any other key to start',01bh,'[0m',CR,LF,'$'
@@ -2426,7 +2470,7 @@ uibold  db      01bh,'[1m$'
 uirevrs db      01bh,'[7m$'
 uireset db      01bh,'[0m$'
 uistr1  db      'Currently selected file (N/P-next/previous,Space-tag/untag): $'
-uistr2  db      'Command(D-delete,C-copy,T-display,R-rename,H-help,X-exit)? $'
+uistr2  db      'Command(D-del,C-copy,T-display,R-ren,L-drive,-H-help,X-exit)? $'
 delser  db      'Tag one or more files for deletion!$'
 cpyser  db      '   Tag one or more files to copy!$'
 renser  db      '  Tag one or more files to rename!$'
@@ -2453,8 +2497,7 @@ logmsg  db      'Select new disk letter: $'
 schfcb  db      0,'???????????',0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0
 blnkfcb db      0,'           ',0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0
 mworkng db      'Enumerating files in drive $'
-help001 db      'STEM - a basic file manager for CP/M 2.2 on Altair 8800$'
-help002 db      'which allows a user to copy, delete, delete, and rename files.$'
+help001 db      '     STEM - a basic file manager for CP/M 2.2 on Altair 8800$'
 help003 db      'When started, the screen is divided into 3 horizontal sections:$'
 help004 db      '+ Top line - this shows which drive is currently being read,$'
 help005 db      '  how many files are on the drive, and how many are tagged.$'
@@ -2485,6 +2528,17 @@ help029 db      '  + T - this will display all tagged files.  ASCII files will$'
 help030 db      '    displayed as text while other files displayed as hex dump.$'
 help031 db      '  + R - this will rename all tagged files.  User will be$'
 help032 db      '    prompted for a new name for each file.$'
+help033 db      '  + L - "log into" a new disk and show files on that disk$'
+shlp001 db      ' Short command help:$'
+shlp002 db      ' D - delete one or more files$'
+shlp003 db      ' C - copy one or more files$'
+shlp004 db      ' T - display one or more files$'
+shlp005 db      ' R - rename one or more files$'
+shlp006 db      ' L - change disk drive$'
+shlp007 db      ' Short navigation help:$'
+shlp008 db      ' N - select next file (wraps around end to beginning)$'
+shlp009 db      ' P - select previous file (wraps around beginning to end)$'
+shlp010 db      ' <SPACE> - tag/untag toggle of selected file$'
 
 ;***************************************************
 ; START OF VARIABLE DATA AREA
