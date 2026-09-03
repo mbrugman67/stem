@@ -10,6 +10,19 @@ This is a work in progress and definitely not ready for primetime.  It is not fe
 * Fork this repo, do some coding, and submit a PR.  *(A PR that includes any code produced by any kind of LLM/coding agent will be rejected.  Even the most insignificant bit of that crap will be thrown out.  Sorry, my repo, my rules.)*
 * Try the program out and submit any issues you may find.  Please include as much detail as possible.
 
+### Known issues and limitations
++ Program will load a maximum of 70 files per drive
++ There is an assumption that the machine has 4 disk drives
++ ASCII/Text display pager makes some assumptions about what will fit on a screen
+
+### TODO
++ Increase file capacity
+  + The big thing is that the middle section of screen (file listing) will need to be scrollable independent of the rest of the screen
+  + Tagging will need to be refactored, but not a big deal
++ Do a better job of figuring out which drives are physically present, and which ones have disks loaded 
++ Add file/disk info, such as capacity, utilisation, sizes, etc.  This is part of above item
++ Add compression/decompression using standard ZIP algorithms
+
 ## About the program
 The program was written from scratch in 8080 assembly language.  All file I/O is handled by syscalls to CP/M; because of that, the program *should* work on any computer with an 8080 or Z80 CPU that is running CP/M 2.2, but I really can't guarantee that :/
 
@@ -31,20 +44,21 @@ There are a few ways to get the program:
 * Transfer the source file to either a software Altair emulator, a hardware retro kit, or the real thing if you're lucky enough to have access to one.  There are a variety of ways to do that, see your docs.  Once there:
   1) Assemble the program using CP/M's `asm` program.  Command line and output would be something like this (drive letters most likely different, etc.):
         ```
-        D>b:asm stem
-        CP/M ASSEMBLER - VER 2.0
-        12CB
-        00DH USE FACTOR
-        END OF ASSEMBLY
+        C>asm stem.ccb                                                               
+        CP/M ASSEMBLER - VER 2.0                                                        
+        2081                                                                            
+        012H USE FACTOR                                                                 
+        END OF ASSEMBLY 
         ```
+        *Note - Based on disk sizes, it may be necessary to direct `PRN` output to another drive, something like `asm stem.ccb` which would read asm file from C, output hex to C, and output prn to B*
   1) Then use `load` to create loadable executable image:
         ``` 
-        D>b:load stem
-        
-        FIRST ADDRESS 0100
-        LAST  ADDRESS 0F01
-        BYTES READ    0E02
-        RECORDS WRITTEN 1D
+        C>load stem                                                                     
+                                                                                        
+        FIRST ADDRESS 0100                                                              
+        LAST  ADDRESS 1C8A                                                              
+        BYTES READ    1B8B                                                              
+        RECORDS WRITTEN 38 
         ```
         This process is almost instantaneous on a software-simulated Altair running on modern hardware.  On Altair-Duino hardware with disk I/O set to "real time", the build process will take several minutes!  Grab a coffee and enjoy the Blinkenlights :)
 * The last way is to download the latest build from the Releases of this repo.  That will be a zip archive with the latest `.com`, `.prn`, and `.hex` files.  The `hex` and `prn` files are included in case you want to use `DDT` to debug and explore program execution.  *Note - Releases will be produced once the project is a little further along*.
@@ -65,6 +79,7 @@ At times, I used a [docker-based emulator](https://gloveboxes.github.io/Altair-8
 
 ## Running the program
 From the command line, run `STEM`.  The program will show the greeting information and then will load and display the files on the current disk.  At the bottom of the display are two lines, the first showing the currently selected file and the second showing the available commands:
+
 ![listing](./img/stem2.png)
 
 *Note - commands can be entered in upper or lower case*
@@ -72,14 +87,27 @@ From the command line, run `STEM`.  The program will show the greeting informati
 As the first line hints at, pressing the `N` and `P` keys will move the next and previous file in the listing.  The current filename will be shown at the end of the "Currently selected file" line.
 
 ### Tagging files 
-Commands are performed on "tagged" files.  Pressing the space bar will either "tag" or "untag" the selected file.  For example, 9 files have been "tagged":
+Commands are performed on "tagged" files.  Pressing the space bar will either "tag" or "untag" the selected file.  For example, 9 files have been "tagged":  
+
 ![tags](./img/stem3.png)
 
 ### Deleting files
-Once one or more files are tagged, pressing the `D` key.  A popup will prompt for confirmation of deletion.  Select `A` will delete the rest of the tagged files without prompt
+Once one or more files are tagged, pressing the `D` key.  A popup will prompt for confirmation of deletion.  Select `A` will delete the rest of the tagged files without prompt:  
+
 ![delete](./img/stem6.png)
 
 ### Copying files
-Tagged files will be copied by pressing the `C` key.  A popup will prompt for confirmation and name for the copies.  Copying a file to another drive can be acomplished by specifying that drive in the name, for example `B:MATTY2.DAT` will copy the currently tagged file to the `B` drive with the name `MATTY.DAT`:
+Tagged files will be copied by pressing the `C` key.  A popup will prompt for confirmation and name for the copies.  Copying a file to another drive can be acomplished by specifying that drive in the name, for example `B:MATTY2.DAT` will copy the currently tagged file to the `B` drive with the name `MATTY.DAT`:  
+
 ![copy](./img/stem7.png)
+
 *NOTE - filenames will automatically be converted to uppercase before copying*
+
+### Displaying files
+Tagged files will be displayed with the `T` key.  A popup will prompt for confirmation of display.  ASCII/Text files will be displayed one page at a time:
+
+![display text](./img/stem9.png)  
+
+Binary files will displayed as a hex dump with 256 bytes per page:
+
+![display binary](./img/stem8.png)
