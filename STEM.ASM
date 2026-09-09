@@ -950,6 +950,10 @@ help:
         mvi     c,strout        ; display string
         call    sys             ; syscall
         call    crlf            ; newline
+        lxi     d,shlp012       ; short help message
+        mvi     c,strout        ; display string
+        call    sys             ; syscall
+        call    crlf            ; newline
         call    crlf            ; extra newline
         lxi     d,shlp007       ; short help message
         mvi     c,strout        ; display string
@@ -2562,7 +2566,7 @@ canary  db      0beh,0efh,0cah,0feh
 errcan  db      'ERROR - Stack is corrupt!',CR,LF,'$'
 flowr1  db      ' +--------------------------------------------------+ $'
 flowr2  db      ' |                                                  | $'
-stemver db      'STEM v0.9.3$'
+stemver db      'STEM v0.9.4$'
 welcom1 db      'An Altair 8800 File Manager$'
 welcom2 db      '2026 Mattydyne Heavy Industries$'
 welcom3 db      01bh,'[1m"H" for help, any other key to start',01bh,'[0m',CR,LF,'$'
@@ -2643,11 +2647,12 @@ shlp003 db      ' C - copy one or more files$'
 shlp004 db      ' T - display one or more files$'
 shlp005 db      ' R - rename one or more files$'
 shlp006 db      ' L - change disk drive$'
+shlp012 db      ' X - Exit the program$'
 shlp007 db      ' Short navigation help:$'
 shlp008 db      ' N - select next file (wraps around end to beginning)$'
 shlp009 db      ' P - select previous file (wraps around beginning to end)$'
-shlp010 db      ' <SPACE> - tag/untag toggle of selected file$'
-shlp011 db      ' U - change User Area$'
+shlp010 db      ' U - change User Area$'
+shlp011 db      ' <SPACE> - tag/untag toggle of selected file$'
 
 ;***************************************************
 ; START OF VARIABLE DATA AREA
