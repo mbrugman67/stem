@@ -86,7 +86,7 @@ pdsk	equ     28              ; protect disk
 getrov	equ     29              ; get R/O vector
 setatt	equ     30              ; set file attributes
 gdprarm	equ     31              ; get address (disk params)
-gsuer	equ     32              ; get/set user code
+guser	equ     32              ; get/set user code
 rdrnd	equ     33              ; read random
 wrrnd	equ     34              ; write random
 fsize	equ     35              ; compute file size
@@ -231,7 +231,7 @@ uiprv2:
         ; file)
 uitag:
         cpi     ' '             ; do tag/untag?
-        jnz     uidel           ; nope, check for delete
+        jnz     usr1            ; nope, check for change user area
         lda     flsel           ; get currently selected file number
         mov     l,a             ; save it to L
         mvi     d,strtrow       ; first line to use
@@ -265,6 +265,35 @@ tag4:
 tag5:
         call    pchar           ; print it
         jmp     uinext          ; next UI interaction
+
+        ; Change user area.  CP/M 2.2 and earlier didn't implement sub-
+        ; directories.  2.2 does have the notion of User Areas to help
+        ; organize files.  See the docs, but this allows one to select
+        ; which user area's files to display and work with
+usr1:
+        cpi     'U'             ; do change user area?
+        jnz     uidel           ; nope, check for delete
+usr2:
+        mvi     d,5             ; line 5
+        mvi     e,16            ; column 16
+        mvi     a,4             ; 3 blank lines
+        call    flower          ; draw a flower box
+        mvi     d,7             ; line 7
+        mvi     e,24            ; column 24
+        call    setcur          ; put cursor there
+        lxi     d,usrcmsg       ; "select user area"... prompt
+        mvi     c,strout        ; print that
+        call    sys             ; syscall
+        mvi     a,15            ; max entry allowed
+        call    getnm1          ; get a single byte numeric value
+        mov     c,a             ; save returned byte for now
+        mov     a,b             ; get return code
+        ora     a               ; is it zero?
+        jnz     usr2            ; nope - go get it again!
+        mov     e,c             ; put user-entered USER area into E
+        mvi     c,guser         ; syscall to get/set user area
+        call    sys             ; syscall to SET user area
+        jmp     usrlp0
 
         ; Delete all tagged files.  The first file is displayed with a prompt
         ; to "delete yes/no/all".  If 'no', then go to the next tagged file,
@@ -622,8 +651,6 @@ typoerr:
 typrfl:                         ; read failure
         jmp     typ1            ; go restart for now TODO
 
-
-
         ; Rename all tagged files.  User will be prompted for a new filename
         ; for each file.  If a file with the new name already
         ; exists, file will not be copied, and user will be prompted for a
@@ -727,8 +754,7 @@ renfl:
         call    perr            ; display error message
         jmp     ren1            ; go try again
 
-
-
+        ; Display help information
 uihelp:
         cpi     'H'             ; User wants help info
         jnz     uilog           ; nope, go to log drive
@@ -924,6 +950,10 @@ help:
         mvi     c,strout        ; display string
         call    sys             ; syscall
         call    crlf            ; newline
+        lxi     d,shlp012       ; short help message
+        mvi     c,strout        ; display string
+        call    sys             ; syscall
+        call    crlf            ; newline
         call    crlf            ; extra newline
         lxi     d,shlp007       ; short help message
         mvi     c,strout        ; display string
@@ -938,6 +968,10 @@ help:
         call    sys             ; syscall
         call    crlf            ; newline
         lxi     d,shlp010       ; short help message
+        mvi     c,strout        ; display string
+        call    sys             ; syscall
+        call    crlf            ; newline
+        lxi     d,shlp011       ; short help message
         mvi     c,strout        ; display string
         call    sys             ; syscall
         call    crlf            ; newline
@@ -1152,7 +1186,7 @@ getfnm:
         lxi     d,uinplen       ; buffer length
         lxi     h,usrinp        ; buffer start address
         call    memset          ; set the buffer to be fulla nulls
-        mvi     m,uinplen       ; first byte of bufffer is length for CP/M
+        mvi     m,uinplen       ; first byte of buffer is length for CP/M
         xchg                    ; swap H/L with D/E, syscall expects buffer there
         mvi     c,rdcbuf        ; function to read console bufffer
         call    sys             ; perform the syscall
@@ -1249,6 +1283,72 @@ ginpok:                         ; return with success
         mvi     a,0             ; set success return
         lxi     d,fcb2          ; good return with D pointing to our FCB
 ginpret:
+        ret                     ;
+
+;
+; getnm1
+; Get one-byte numeric value
+; IN
+;       A - max value
+; OUT
+;       B - 0 = good input, non-zero = error
+;       A - user entry
+getnm1:
+        push    d               ;
+        push    h               ;
+        sta     entlim          ; save user-entered limit value
+        mvi     b,0             ; byte to initial full buffer with
+        lxi     d,uinplen       ; buffer length
+        lxi     h,usrinp        ; buffer start address
+        call    memset          ; set the buffer to be fulla nulls
+        mvi     m,uinplen       ; first byte of buffer is length for CP/M
+        xchg                    ; swap H/L with D/E, syscall expects buffer there
+        mvi     c,rdcbuf        ; function to read console bufffer
+        call    sys             ; perform the syscall
+        lxi     h,usrinp+1      ; point to number of entered chars (post editing)
+        mov     a,m             ; get that number
+        ora     a               ; is it zero?
+        jz      gtnm1bd         ; bad entry
+        cpi     3               ; one byte - can't be more than 3 bytes, right? (0-255)
+        jp      gtnm1bd         ; bad entry
+        sta     enttmp          ; save count
+        mvi     c,0             ; zero C
+gtnm1a:
+        inx     h               ; next value in entry
+        mov     a,m             ; get it into A
+        cpi     '0'             ; less than zero?
+        jm      gtnm1bd         ; bad!
+        sui     '0'             ; convert ascii to decimal
+        cpi     10              ; greater than 10?
+        jnc     gtnm1bd         ; return error
+        mov     d,a             ; save this new digit
+        mov     a,c             ; get current running value
+        add     a               ; multiply by 2
+        mov     c,a             ; save that
+        add     a               ; multipy by 4 now
+        add     a               ; multiplied by 8 now
+        add     c               ; multiplied by 10
+        add     d               ; add current (prev digit * 10 plus new digit)
+        jc      gtnm1bd         ; rollover (greater than 255)
+        mov     c,a             ; save running total
+        lda     enttmp          ; get count
+        dcr     a               ; decrement it
+        sta     enttmp          ; save count
+        jnz     gtnm1a          ; get next value
+        lda     entlim          ; get limit value
+        mov     b,a             ; save it in B
+        inr     b               ; one more for good measure
+        mov     a,c             ; get accumulated value
+        cmp     b               ; compare entered to limit
+        jp      gtnm1bd         ; too much! error
+        mvi     b,0             ; nah, this is fine
+        jmp     gtnm1rt         ; return value in A
+gtnm1bd:
+        mvi     b,0ffh          ; set bad flag
+        jmp     gtnm1rt         ; return
+gtnm1rt:
+        pop     h               ;
+        pop     d               ;
         ret                     ;
 
 ;
@@ -1488,8 +1588,9 @@ b2asc4:
 ; IN
 ;       A - number of rows + 1
 ;       D - start line
-;       D - start col
+;       E - start col
 flower:
+        dcr     e               ; decrement column by one
         push    psw             ;
         push    b               ;
         push    d               ;
@@ -1532,6 +1633,7 @@ flwr2:
         pop     d               ;
         pop     b               ;
         pop     psw             ;
+        inr     e               ; restore column position
         ret
 
 ;
@@ -2407,6 +2509,14 @@ prnui:
         call    pchar           ; print that
         mvi     a,':'           ; trailing colon after drive letter
         call    pchar           ; print to terminal
+        lxi     d,fndstr5       ; " user area "... message
+        mvi     c,strout        ; print string
+        call    sys             ; CP/M
+        mvi     c,guser         ; syscall to get/set current User Area
+        mvi     e,0ffh          ; request to get user area
+        call    sys             ; CP/M gimme current user area, result in A
+        mov     l,a             ; put that value into L for prn8 routine
+        call    prn8            ; print user area number
         lxi     d,fndstr2       ; " (total of  " message
         mvi     c,strout        ; print string
         call    sys             ; CP/M
@@ -2454,23 +2564,24 @@ prnui:
 ;***************************************************
 canary  db      0beh,0efh,0cah,0feh
 errcan  db      'ERROR - Stack is corrupt!',CR,LF,'$'
-flowr1  db      '+--------------------------------------------------+$'
-flowr2  db      '|                                                  |$'
-stemver db      'STEM v0.9.3$'
+flowr1  db      ' +--------------------------------------------------+ $'
+flowr2  db      ' |                                                  | $'
+stemver db      'STEM v0.9.4$'
 welcom1 db      'An Altair 8800 File Manager$'
 welcom2 db      '2026 Mattydyne Heavy Industries$'
 welcom3 db      01bh,'[1m"H" for help, any other key to start',01bh,'[0m',CR,LF,'$'
 nofiles db      'No files found',CR,LF,'$'
 en2many db      'Exceeded max file count!  Loading first $'
 fndstr1 db      'Listing of drive $'
+fndstr5 db      ' User Area $'
 fndstr2 db      ' (total of $'
 fndstr3 db      ' files, $'
 fndstr4 db      ' tagged)$'
 uibold  db      01bh,'[1m$'
 uirevrs db      01bh,'[7m$'
 uireset db      01bh,'[0m$'
-uistr1  db      'Currently selected file (N/P-next/previous,Space-tag/untag): $'
-uistr2  db      'Command(D-del,C-copy,T-display,R-ren,L-drive,-H-help,X-exit)? $'
+uistr1  db      'Selected file (N/P/U/<Space>): $'
+uistr2  db      'Command (D/C/T/R/L/X, H-help)? $'
 delser  db      'Tag one or more files for deletion!$'
 cpyser  db      '   Tag one or more files to copy!$'
 renser  db      '  Tag one or more files to rename!$'
@@ -2494,6 +2605,7 @@ cpymsg2 db      'Enter new filename> $'
 uichyn  db      ' (Y/N)? $'
 uichyna db      ' (Y/N/A)? $'
 logmsg  db      'Select new disk letter: $'
+usrcmsg db      'Select new user area (0-15): $'
 schfcb  db      0,'???????????',0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0
 blnkfcb db      0,'           ',0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0
 mworkng db      'Enumerating files in drive $'
@@ -2535,10 +2647,12 @@ shlp003 db      ' C - copy one or more files$'
 shlp004 db      ' T - display one or more files$'
 shlp005 db      ' R - rename one or more files$'
 shlp006 db      ' L - change disk drive$'
+shlp012 db      ' X - Exit the program$'
 shlp007 db      ' Short navigation help:$'
 shlp008 db      ' N - select next file (wraps around end to beginning)$'
 shlp009 db      ' P - select previous file (wraps around beginning to end)$'
-shlp010 db      ' <SPACE> - tag/untag toggle of selected file$'
+shlp010 db      ' U - change User Area$'
+shlp011 db      ' <SPACE> - tag/untag toggle of selected file$'
 
 ;***************************************************
 ; START OF VARIABLE DATA AREA
@@ -2553,6 +2667,8 @@ fcount  ds      1               ; file count addr
 flsel   ds      1               ; selected file number
 flwrtmp ds      1               ; temporary storage for flower box
 drvtmp  ds      1               ; drive letter storage during drive change
+entlim  ds      1               ; entry limit value (for 1 byte entry)
+enttmp  ds      1               ; temp entry value
 fnstate ds      1               ; get filename state
 typlins ds      1               ; line counter for file display
 typcols ds      1               ; column counter for file display

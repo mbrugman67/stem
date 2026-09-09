@@ -16,6 +16,9 @@ This is a work in progress and definitely not ready for primetime.  It is not fe
 + ASCII/Text display pager makes some assumptions about what will fit on a screen
 
 ### TODO
++ Manage CP/M user areas:
+  + select user area for file display
+  + move files from user area to another user area
 + Increase file capacity
   + The big thing is that the middle section of screen (file listing) will need to be scrollable independent of the rest of the screen
   + Tagging will need to be refactored, but not a big deal
