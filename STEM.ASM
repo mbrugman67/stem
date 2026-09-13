@@ -42,7 +42,7 @@
 ;****************************************************
 ; Is debug enabled?
 ;****************************************************
-DEBUG   equ     0               ; any non-zero enables debug code
+DEBUG   equ     1               ; any non-zero enables debug code
 
 ;****************************************************
 ; Entry point for FDOS, BIOS, CP/M system calls
@@ -170,6 +170,7 @@ uinplen equ     40              ; length of user input buffer
 usrlp0:
         call    clrtags         ; clear all file tags
         call    listfls         ; load and list files
+        call    prnui           ; print user interface commands/info
 uinext:                         ; user UI interaction loop
         call    stkchk          ; check stack integrity
         ora     a               ; stack is OK
@@ -180,13 +181,12 @@ uinext:                         ; user UI interaction loop
         mvi     c,strout        ; print it
         call    sys             ; print it
         jmp     cleanup         ; get outta here
-
 cont:
         IF DEBUG
         call    prnvars         ; print debug stuffs on line 2
         ENDIF
 
-        call    prnui           ; print user interface info & menu
+        call    prnui2          ; print file count, selected filename, clear command
         call    cin2uppr        ; get user input (force to uppercase)
 
         ; Move file selection to next file.  Wraps around to first file
@@ -658,7 +658,7 @@ typrfl:                         ; read failure
         ; definitely be stuff factored out into routine(s)
 uiren:
         cpi     'R'             ; rename file?
-        jnz     uihelp          ; nope, try
+        jnz     mvua            ; nope, try move user area
         call    cnttags         ; get count of tagged files
         cpi     0               ; is it zero?
         jnz     ren1            ; no? go start renaming
@@ -754,6 +754,97 @@ renfl:
         call    perr            ; display error message
         jmp     ren1            ; go try again
 
+
+
+
+mvua:                           ; move a file to another user area
+        cpi     'M'             ; User wants to move?
+        jnz     uihelp          ; nope, go to help
+        call    cnttags         ; get count of tagged files
+        cpi     0               ; is it zero?
+        jnz     mvua1           ; no? go get target user area
+        lxi     d,mvuaser       ; error message for no files selected
+        call    perr            ; print the error message in a flower box
+        jmp     usrlp0          ; redraw all
+mvua1:
+        mvi     d,5             ; line 5
+        mvi     e,16            ; column 16
+        mvi     a,4             ; 3 blank lines
+        call    flower          ; draw a flower box
+        mvi     d,7             ; line 7
+        mvi     e,24            ; column 24
+        call    setcur          ; put cursor there
+        lxi     d,mvuamsg       ; "select target user area"... prompt
+        mvi     c,strout        ; print that
+        call    sys             ; syscall
+        mvi     a,15            ; max entry allowed
+        call    getnm1          ; get a single byte numeric value
+        mov     c,a             ; save returned byte for now
+        mov     a,b             ; get return code
+        ora     a               ; is it zero?
+        jnz     usr2            ; nope - go get it again!
+        mov     a,c             ; get selection from user
+        sta     trgtua          ; save it to ram
+        mvi     c,guser         ; syscall to get/set current User Area
+        mvi     e,0ffh          ; request to get user area
+        call    sys             ; CP/M gimme current user area, result in A
+        sta     srcua           ; save current user area in ram
+        mov     b,a             ; save current user area in B
+        lda     trgtua          ; and what did the user ask for?
+        cmp     b               ; are they the same?  (current UA and desired UA?)
+        jnz     mvua2           ; nope, they are different.  Carry on.
+        lxi     d,mvuaer1       ; error message about same user area
+        call    perr            ; print the error message in a flower box
+        jmp     mvua1           ; get a different user area
+mvua2:
+        call    itertgs         ; get the next tagged file
+        cpi     0ffh            ; 0xff means no more tagged files
+        jz      mvuadn          ; all done
+        lda     srcua           ; get source file's user area
+        mov     e,a             ; put it in E register
+        mvi     c,guser         ; syscall to set user area
+        call    sys             ; switch to source user area
+        call    bldfcb          ; set up a file control block for source file
+        rst     7
+        lxi     d,fcb1          ; get the FCB built from current file
+        mvi     c,fopen         ; open file syscall
+        call    sys             ; syscall
+        cpi     0ffh            ; good result is 0,1,2,3; 255 is a failure
+        jz      mvuae1          ; jump to error message
+        mvi     d,fcb1          ; FCB
+        mvi     c,rdseq         ; read first block
+        call    sys             ; syscall
+        rst     7
+        lda     trgtua          ; get target user area
+        mov     e,a             ; put it in E register
+        mvi     c,guser         ; syscall to set user area
+        call    sys             ; switch to destination user area
+        lxi     d,fcb1          ; point to FCB
+        rst     7
+        mvi     c,wrseq         ; write this block
+        call    sys             ; syscall
+        lxi     d,fcb1          ; get FCB again
+        mvi     c,fclose        ; close file function, should update UA record in dir entry
+        call    sys             ; syscall
+        jmp     mvua2           ; go get next file
+mvuae1:
+        lxi     d,cpysr1        ; message about unable to open file
+        call    perr            ; print error message
+        jmp     mvua2           ; go try next file
+mvuadn:
+        lda     srcua           ; go get source user area
+        mov     e,a             ; put it in E register
+        mvi     c,guser         ; syscall to set user area
+        call    sys             ; switch to source user area
+        jmp     usrlp0          ; go back for next UI interaction
+
+
+
+
+
+
+
+
         ; Display help information
 uihelp:
         cpi     'H'             ; User wants help info
@@ -807,9 +898,8 @@ uilog2:
 
         ; go back to CP/M.
 uiexit:
-        cpi     'X'
-        jz      cleanup
-        jmp     uinext          ; next UI interaction
+        cpi     'X'             ; fall through to cleanup and exit
+        jnz     uinext          ; next UI interaction
 
 
 ;*************************************************
@@ -921,210 +1011,36 @@ tstd1:
 ;
 help:
         call    cls             ; clear screen
-        lxi     d,help001       ; help message
+        lxi     d,helpttl       ; help title
         mvi     c,strout        ; display string
         call    sys             ; syscall
-        call    crlf            ; newline
-        call    crlf            ; extra newline
-        lxi     d,shlp001       ; short help message
+        lxi     d,hlpshrt       ; short help message
         mvi     c,strout        ; display string
-        call    sys             ; syscall
-        call    crlf            ; newline
-        lxi     d,shlp002       ; short help message
-        mvi     c,strout        ; display string
-        call    sys             ; syscall
-        call    crlf            ; newline
-        lxi     d,shlp003       ; short help message
-        mvi     c,strout        ; display string
-        call    sys             ; syscall
-        call    crlf            ; newline
-        lxi     d,shlp004       ; short help message
-        mvi     c,strout        ; display string
-        call    sys             ; syscall
-        call    crlf            ; newline
-        lxi     d,shlp005       ; short help message
-        mvi     c,strout        ; display string
-        call    sys             ; syscall
-        call    crlf            ; newline
-        lxi     d,shlp006       ; short help message
-        mvi     c,strout        ; display string
-        call    sys             ; syscall
-        call    crlf            ; newline
-        lxi     d,shlp012       ; short help message
-        mvi     c,strout        ; display string
-        call    sys             ; syscall
-        call    crlf            ; newline
-        call    crlf            ; extra newline
-        lxi     d,shlp007       ; short help message
-        mvi     c,strout        ; display string
-        call    sys             ; syscall
-        call    crlf            ; newline
-        lxi     d,shlp008       ; short help message
-        mvi     c,strout        ; display string
-        call    sys             ; syscall
-        call    crlf            ; newline
-        lxi     d,shlp009       ; short help message
-        mvi     c,strout        ; display string
-        call    sys             ; syscall
-        call    crlf            ; newline
-        lxi     d,shlp010       ; short help message
-        mvi     c,strout        ; display string
-        call    sys             ; syscall
-        call    crlf            ; newline
-        lxi     d,shlp011       ; short help message
-        mvi     c,strout        ; display string
-        call    sys             ; syscall
-        call    crlf            ; newline
-        call    crlf            ; extra newline
+        call    sys             ; do the syscall
         lxi     d,contmsg       ; continue message
         mvi     c,strout        ; display string
         call    sys             ; syscall
         call    cin2uppr        ; pause for input
 
         call    cls             ; clear screen
-        lxi     d,help001       ; help message
+        lxi     d,helpttl       ; help title
         mvi     c,strout        ; display string
         call    sys             ; syscall
-        call    crlf            ; newline
-        call    crlf            ; extra newline
-        lxi     d,help003       ; help message
+        lxi     d,hlpusng       ; help "Using Stem"
         mvi     c,strout        ; display string
         call    sys             ; syscall
-        call    crlf            ; newline
-        lxi     d,help004       ; help message
-        mvi     c,strout        ; display string
-        call    sys             ; syscall
-        call    crlf            ; newline
-        lxi     d,help005       ; help message
-        mvi     c,strout        ; display string
-        call    sys             ; syscall
-        call    crlf            ; newline
-        lxi     d,help006       ; help message
-        mvi     c,strout        ; display string
-        call    sys             ; syscall
-        call    crlf            ; newline
-        lxi     d,help007       ; help message
-        mvi     c,strout        ; display string
-        call    sys             ; syscall
-        call    crlf            ; newline
-        lxi     d,help008       ; help message
-        mvi     c,strout        ; display string
-        call    sys             ; syscall
-        call    crlf            ; newline
-        lxi     d,help009       ; help message
-        mvi     c,strout        ; display string
-        call    sys             ; syscall
-        call    crlf            ; newline
-        lxi     d,help010       ; help message
-        mvi     c,strout        ; display string
-        call    sys             ; syscall
-        call    crlf            ; newline
-        call    crlf            ; extra newline
-        lxi     d,help011       ; help message
-        mvi     c,strout        ; display string
-        call    sys             ; syscall
-        call    crlf            ; newline
-        lxi     d,help012       ; help message
-        mvi     c,strout        ; display string
-        call    sys             ; syscall
-        call    crlf            ; newline
-        lxi     d,help013       ; help message
-        mvi     c,strout        ; display string
-        call    sys             ; syscall
-        call    crlf            ; newline
-        lxi     d,help014       ; help message
-        mvi     c,strout        ; display string
-        call    sys             ; syscall
-        call    crlf            ; newline
-        lxi     d,help015       ; help message
-        mvi     c,strout        ; display string
-        call    sys             ; syscall
-        call    crlf            ; newline
-        lxi     d,help016       ; help message
-        mvi     c,strout        ; display string
-        call    sys             ; syscall
-        call    crlf            ; newline
-        lxi     d,help017       ; help message
-        mvi     c,strout        ; display string
-        call    sys             ; syscall
-        call    crlf            ; newline
-        lxi     d,help018       ; help message
-        mvi     c,strout        ; display string
-        call    sys             ; syscall
-        call    crlf            ; newline
-        lxi     d,help019       ; help message
-        mvi     c,strout        ; display string
-        call    sys             ; syscall
-        call    crlf            ; newline
-        lxi     d,help020       ; help message
-        mvi     c,strout        ; display string
-        call    sys             ; syscall
-        call    crlf            ; newline
-        call    crlf            ; extra newline
         lxi     d,contmsg       ; continue message
         mvi     c,strout        ; display string
         call    sys             ; syscall
         call    cin2uppr        ; pause for input
 
         call    cls             ; clear screen
-        lxi     d,help001       ; help message
+        lxi     d,helpttl       ; help title
         mvi     c,strout        ; display string
         call    sys             ; syscall
-        call    crlf            ; newline
-        call    crlf            ; extra newline
-        lxi     d,help021       ; help message
+        lxi     d,hlpcmds       ; help commands
         mvi     c,strout        ; display string
         call    sys             ; syscall
-        call    crlf            ; newline
-        lxi     d,help022       ; help message
-        mvi     c,strout        ; display string
-        call    sys             ; syscall
-        call    crlf            ; newline
-        lxi     d,help023       ; help message
-        mvi     c,strout        ; display string
-        call    sys             ; syscall
-        call    crlf            ; newline
-        lxi     d,help024       ; help message
-        mvi     c,strout        ; display string
-        call    sys             ; syscall
-        call    crlf            ; newline
-        lxi     d,help025       ; help message
-        mvi     c,strout        ; display string
-        call    sys             ; syscall
-        call    crlf            ; newline
-        lxi     d,help026       ; help message
-        mvi     c,strout        ; display string
-        call    sys             ; syscall
-        call    crlf            ; newline
-        lxi     d,help027       ; help message
-        mvi     c,strout        ; display string
-        call    sys             ; syscall
-        call    crlf            ; newline
-        lxi     d,help028       ; help message
-        mvi     c,strout        ; display string
-        call    sys             ; syscall
-        call    crlf            ; newline
-        lxi     d,help029       ; help message
-        mvi     c,strout        ; display string
-        call    sys             ; syscall
-        call    crlf            ; newline
-        lxi     d,help030       ; help message
-        mvi     c,strout        ; display string
-        call    sys             ; syscall
-        call    crlf            ; newline
-        lxi     d,help031       ; help message
-        mvi     c,strout        ; display string
-        call    sys             ; syscall
-        call    crlf            ; newline
-        lxi     d,help032       ; help message
-        mvi     c,strout        ; display string
-        call    sys             ; syscall
-        call    crlf            ; newline
-        lxi     d,help033       ; help message
-        mvi     c,strout        ; display string
-        call    sys             ; syscall
-        call    crlf            ; newline
-        call    crlf            ; extra newline
         lxi     d,contmsg       ; continue message
         mvi     c,strout        ; display string
         call    sys             ; syscall
@@ -2498,7 +2414,7 @@ prnui:
         push    d               ;
         push    h               ;
         mvi     d,1             ; new cursor position, line 1
-        mvi     e,16            ; column 16
+        mvi     e,7             ; column 7
         call    rstline         ; clear current line,
         mvi     c,strout        ; print string
         lxi     d,fndstr1       ; "Listing of drive " message
@@ -2517,6 +2433,43 @@ prnui:
         call    sys             ; CP/M gimme current user area, result in A
         mov     l,a             ; put that value into L for prn8 routine
         call    prn8            ; print user area number
+        mvi     d,20            ; go to line 20
+        mvi     e,1             ; column 1
+        call    rstline         ; clear line
+        lxi     d,uistr1        ; "Current file..." message
+        mvi     c,strout        ; string out syscall
+        call    sys             ; make the syscall
+        mvi     d,21            ; go to line 21
+        mvi     e,1             ; column 1
+        call    rstline         ; clear line
+        lxi     d,uistr2        ; second UI line
+        mvi     c,strout        ; print string
+        call    sys             ; let cpm print it
+        pop     h               ;
+        pop     d               ;
+        pop     b               ;
+        pop     psw             ;
+        ret                     ; all done
+
+;
+; prnui2
+; Print "user interface" section stuff that changes when
+; selected file changes
+;
+prnui2:
+        push    psw             ;
+        push    b               ;
+        push    d               ;
+        push    h               ;
+        mvi     d,1             ; new cursor position, line 1
+        mvi     e,41            ; column 41 (just after user area number)
+        call    setcur          ; put cursor there
+        lxi     d,uiclnln       ; sequence to clear to the end of the line
+        mvi     c,strout        ; send that to terminal
+        call    sys             ; syscall
+        mvi     d,1             ; new cursor position, line 1
+        mvi     e,41            ; column 41 (just after user area number)
+        call    setcur          ; put cursor there
         lxi     d,fndstr2       ; " (total of  " message
         mvi     c,strout        ; print string
         call    sys             ; CP/M
@@ -2529,17 +2482,18 @@ prnui:
         call    cnttags         ; get count of tagged files
         mov     l,a             ; it was in A, move to L for
         call    prn8            ; printing as 8-bit decimal
-        mvi     a,' '           ; another space
-        call    pchar           ; to print
         lxi     d,fndstr4       ; final part of top line
         mvi     c,strout        ; print string
         call    sys             ; syscall
-        mvi     d,20            ; go to line 20
-        mvi     e,1             ; column 1
-        call    rstline         ; clear line
-        lxi     d,uistr1        ; "Current file..." message
-        mvi     c,strout        ; string out syscall
-        call    sys             ; make the syscall
+        mvi     d,20            ; line 20
+        mvi     e,32            ; column 32 (just after selection tools)
+        call    setcur          ; put cursor there
+        lxi     d,uiclnln       ; clear from here to end of line
+        mvi     c,strout        ; send to terminal
+        call    sys             ; syscall to do that
+        mvi     d,20            ; line 20
+        mvi     e,32            ; column 32 (just after selection tools)
+        call    setcur          ; put cursor there
         lxi     d,uibold        ; set bold font
         mvi     c,strout        ; print
         call    sys             ; print it
@@ -2547,12 +2501,15 @@ prnui:
         lxi     d,uireset       ; clear formatting
         mvi     c,strout        ; print
         call    sys             ; print it
-        mvi     d,21            ; go to line 21
-        mvi     e,1             ; column 1
-        call    rstline         ; clear line
-        lxi     d,uistr2        ; second UI line
-        mvi     c,strout        ; print string
-        call    sys             ; let cpm print it
+        mvi     d,21            ; line 21
+        mvi     e,31            ; column 31 (this will clear previous command entry)
+        call    setcur          ; put cursor there
+        lxi     d,uiclnln       ; sequence to clear to end of line
+        mvi     c,strout        ; send to terminal
+        call    sys             ; syscall
+        mvi     d,21            ; line 21
+        mvi     e,31            ; column 31 (this will clear previous command entry)
+        call    setcur          ; put cursor there
         pop     h               ;
         pop     d               ;
         pop     b               ;
@@ -2573,18 +2530,20 @@ welcom3 db      01bh,'[1m"H" for help, any other key to start',01bh,'[0m',CR,LF,
 nofiles db      'No files found',CR,LF,'$'
 en2many db      'Exceeded max file count!  Loading first $'
 fndstr1 db      'Listing of drive $'
-fndstr5 db      ' User Area $'
+fndstr5 db      ' - User Area $'
 fndstr2 db      ' (total of $'
 fndstr3 db      ' files, $'
 fndstr4 db      ' tagged)$'
 uibold  db      01bh,'[1m$'
 uirevrs db      01bh,'[7m$'
 uireset db      01bh,'[0m$'
+uiclnln db      '                                  $'
 uistr1  db      'Selected file (N/P/U/<Space>): $'
 uistr2  db      'Command (D/C/T/R/L/X, H-help)? $'
 delser  db      'Tag one or more files for deletion!$'
 cpyser  db      '   Tag one or more files to copy!$'
 renser  db      '  Tag one or more files to rename!$'
+mvuaser db      '   Tag one or more files to move!$'
 typser  db      '  Tag one or more files to display!$'
 cpyeer  db      '  DESTINATION FILE ALREADY EXISTS!$'
 cpysr1  db      '    UNABLE TO OPEN SOURCE FILE!$'
@@ -2592,6 +2551,7 @@ cpyder  db      '  UNABLE TO OPEN DESTINATION FILE!$'
 render  db      '        UNABLE TO RENAME FILE!$'
 badfnm  db      '          BAD FILE NAME$'
 logerr  db      '     DISK x: IS NOT AVAILABLE!$'
+mvuaer1 db      '  SELECT A DIFFERENT USER AREA!$'
 cpyok   db      ' blocks copied.$'
 typhdr  db      'Displaying file $'
 typftr  db      'Press <SPACE> to continue, any other to exit$'
@@ -2606,53 +2566,54 @@ uichyn  db      ' (Y/N)? $'
 uichyna db      ' (Y/N/A)? $'
 logmsg  db      'Select new disk letter: $'
 usrcmsg db      'Select new user area (0-15): $'
+mvuamsg db      'Select target user area (0-15): $'
 schfcb  db      0,'???????????',0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0
 blnkfcb db      0,'           ',0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0
 mworkng db      'Enumerating files in drive $'
-help001 db      '     STEM - a basic file manager for CP/M 2.2 on Altair 8800$'
-help003 db      'When started, the screen is divided into 3 horizontal sections:$'
-help004 db      '+ Top line - this shows which drive is currently being read,$'
-help005 db      '  how many files are on the drive, and how many are tagged.$'
-help006 db      '+ Middle section is a list of all files on the drive.  Each$'
-help007 db      '  filename is preceded with "[ ]" to show tag status.  For$'
-help008 db      '  example: [ ]STEM.COM$'
-help009 db      '+ Bottom 2 lines show the currently selected file and commands.$'
-help010 db      '  If supported by terminal, selected filename is in bold.$'
-help011 db      'Using STEM$'
-help012 db      '+ All operations are performed on tagged files.  To tag a$'
-help013 db      'file, use the "N" and "P" keys to select desired file.  As$'
-help014 db      'the "N" and "P" keys are pressed, the selected filename will$'
-help015 db      'be updated.  When the desired file is selected, press the$'
-help016 db      '<SPACE> bar to tag/untag that file.  When tagged, the filename$'
-help017 db      'in the middle section will have an "X" in the tagbox to show$'
-help018 db      'it is tagged.  For example: [X]STEM.COM$'
-help019 db      'Also, the tagged file count in the top line will update to show$'
-help020 db      'how many files are tagged.$'
-help021 db      '+ Commands$'
-help022 db      '  + D - this will delete all tagged files.  User will be$'
-help023 db      '    prompted to confirm each file deletion.  Confirming with$'
-help024 db      '    "A" will result in all tagged files being deleted.$'
-help025 db      '  + C - this will copy all tagged files.  User will be prompted$'
-help026 db      '    to enter destination filename.  A file may be copied to$'
-help027 db      '    another drive by specifying in the filename.  For example$'
-help028 db      '    "A:STEM.COM" will copy the file to drive A$'
-help029 db      '  + T - this will display all tagged files.  ASCII files will$'
-help030 db      '    displayed as text while other files displayed as hex dump.$'
-help031 db      '  + R - this will rename all tagged files.  User will be$'
-help032 db      '    prompted for a new name for each file.$'
-help033 db      '  + L - "log into" a new disk and show files on that disk$'
-shlp001 db      ' Short command help:$'
-shlp002 db      ' D - delete one or more files$'
-shlp003 db      ' C - copy one or more files$'
-shlp004 db      ' T - display one or more files$'
-shlp005 db      ' R - rename one or more files$'
-shlp006 db      ' L - change disk drive$'
-shlp012 db      ' X - Exit the program$'
-shlp007 db      ' Short navigation help:$'
-shlp008 db      ' N - select next file (wraps around end to beginning)$'
-shlp009 db      ' P - select previous file (wraps around beginning to end)$'
-shlp010 db      ' U - change User Area$'
-shlp011 db      ' <SPACE> - tag/untag toggle of selected file$'
+helpttl db      '     STEM - a basic file manager for CP/M 2.2 on Altair 8800',CR,LF,CR,LF,'$'
+hlpusng db      'When started, the screen is divided into 3 horizontal sections:',CR,LF
+        db      '+ Top line - this shows which drive is currently being read,',CR,LF
+        db      '  how many files are on the drive, and how many are tagged.',CR,LF
+        db      '+ Middle section is a list of all files on the drive.  Each',CR,LF
+        db      '  filename is preceded with "[ ]" to show tag status.  For',CR,LF
+        db      '  example: [ ]STEM.COM',CR,LF
+        db      '+ Bottom 2 lines show the currently selected file and commands.',CR,LF
+        db      '  If supported by terminal, selected filename is in bold.',CR,LF
+        db      CR,LF,'Using STEM',CR,LF
+        db      '+ All operations are performed on tagged files.  To tag a',CR,LF
+        db      'file, use the "N" and "P" keys to select desired file.  As',CR,LF
+        db      'the "N" and "P" keys are pressed, the selected filename will',CR,LF
+        db      'be updated.  When the desired file is selected, press the',CR,LF
+        db      '<SPACE> bar to tag/untag that file.  When tagged, the filename',CR,LF
+        db      'in the middle section will have an "X" in the tagbox to show',CR,LF
+        db      'it is tagged.  For example: [X]STEM.COM',CR,LF
+        db      'Also, the tagged file count in the top line will update to show',CR,LF
+        db      'how many files are tagged.',CR,LF,CR,LF,'$'
+hlpcmds db      '+ Commands:',CR,LF,CR,LF
+        db      '  + D - this will delete all tagged files.  User will be',CR,LF
+        db      '    prompted to confirm each file deletion.  Confirming with',CR,LF
+        db      '    "A" will result in all tagged files being deleted.',CR,LF
+        db      '  + C - this will copy all tagged files.  User will be prompted',CR,LF
+        db      '    to enter destination filename.  A file may be copied to',CR,LF
+        db      '    another drive by specifying in the filename.  For example',CR,LF
+        db      '    "A:STEM.COM" will copy the file to drive A',CR,LF
+        db      '  + T - this will display all tagged files.  ASCII files will',CR,LF
+        db      '    displayed as text while other files displayed as hex dump.',CR,LF
+        db      '  + R - this will rename all tagged files.  User will be',CR,LF
+        db      '    prompted for a new name for each file.',CR,LF
+        db      '  + L - "log into" a new disk and show files on that disk',CR,LF,CR,LF,'$'
+hlpshrt db      ' Short command help:',CR,LF
+        db      ' D - delete one or more files',CR,LF
+        db      ' C - copy one or more files',CR,LF
+        db      ' T - display one or more files',CR,LF
+        db      ' R - rename one or more files',CR,LF
+        db      ' L - change disk drive',CR,LF
+        db      ' X - Exit the program',CR,LF,CR,LF
+        db      ' Short navigation help:',CR,LF
+        db      ' N - select next file (wraps around end to beginning)',CR,LF
+        db      ' P - select previous file (wraps around beginning to end)',CR,LF
+        db      ' U - change User Area',CR,LF,CR,LF,'$'
+        db      ' <SPACE> - tag/untag toggle of selected file$'
 
 ;***************************************************
 ; START OF VARIABLE DATA AREA
@@ -2670,6 +2631,8 @@ drvtmp  ds      1               ; drive letter storage during drive change
 entlim  ds      1               ; entry limit value (for 1 byte entry)
 enttmp  ds      1               ; temp entry value
 fnstate ds      1               ; get filename state
+trgtua  ds      1               ; target user area for file move
+srcua   ds      1               ; source user area for file move
 typlins ds      1               ; line counter for file display
 typcols ds      1               ; column counter for file display
 typofst ds      2               ; hex dump offset for file display
