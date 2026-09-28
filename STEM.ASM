@@ -796,37 +796,77 @@ mvua1:
         lxi     d,mvuaer1       ; error message about same user area
         call    perr            ; print the error message in a flower box
         jmp     mvua1           ; get a different user area
-mvua2:
+mvua2:                          ; loop through tagged files
         call    itertgs         ; get the next tagged file
         cpi     0ffh            ; 0xff means no more tagged files
         jz      mvuadn          ; all done
+        call    bldfcb          ; build a blank FCB for this file
+        lxi     d,fcb1          ; point to newly-created FCB
+        lxi     h,fcb2          ; point to FCB2
+        lxi     b,fcblen        ; length of FCB
+        call    memcpy          ; copy new FCB struct to L/H (as FCB2)
+        lda     trgtua          ; get target user area
+        mov     e,a             ; move that to E for the syscall
+        mvi     c,guser         ; set user area
+        call    sys             ; do the syscall
+        lxi     d,fcb2          ; point to new named FCB
+        mvi     c,fdel          ; delete any existing file with that name
+        call    sys             ; syscall to delete
+        lxi     d,fcb2          ; FCB
+        mvi     c,fmake         ; syscall to make a file
+        call    sys             ; make a new file in the target user area
         lda     srcua           ; get source file's user area
         mov     e,a             ; put it in E register
         mvi     c,guser         ; syscall to set user area
         call    sys             ; switch to source user area
-        call    bldfcb          ; set up a file control block for source file
-        rst     7
+        call    bldfcb          ; rebuild starting FCB
         lxi     d,fcb1          ; get the FCB built from current file
         mvi     c,fopen         ; open file syscall
         call    sys             ; syscall
         cpi     0ffh            ; good result is 0,1,2,3; 255 is a failure
         jz      mvuae1          ; jump to error message
-        mvi     d,fcb1          ; FCB
-        mvi     c,rdseq         ; read first block
+        lxi     h,0             ; zero H/L
+        shld    blkcnt          ; zero block count
+mvua3:                          ; read source, write dest
+        lhld    blkcnt          ; get block count
+        inx     h               ; increment it
+        shld    blkcnt          ; save it
+        lda     srcua           ; get source file's user area
+        mov     e,a             ; put it in E register
+        mvi     c,guser         ; syscall to set user area
+        lxi     d,fcb1          ; FCB
+        mvi     c,rdseq         ; read block
         call    sys             ; syscall
-        rst     7
+        ora     a               ; non-zero return?
+        jnz     mvua4           ; yes, we're done
         lda     trgtua          ; get target user area
         mov     e,a             ; put it in E register
         mvi     c,guser         ; syscall to set user area
         call    sys             ; switch to destination user area
-        lxi     d,fcb1          ; point to FCB
-        rst     7
+        lxi     d,fcb2          ; get FCB again
         mvi     c,wrseq         ; write this block
         call    sys             ; syscall
-        lxi     d,fcb1          ; get FCB again
-        mvi     c,fclose        ; close file function, should update UA record in dir entry
+        jmp     mvua3           ; go get next file
+mvua4:                          ; close dest file; no need to close source
+        lda     trgtua          ; dest is in target user area
+        mvi     c,guser         ; syscall to set it
+        call    sys             ; go set target user area
+        lxi     d,fcb2          ; new file's final fcb
+        mvi     c,fclose        ; close to update on-disk FCB
         call    sys             ; syscall
-        jmp     mvua2           ; go get next file
+        mvi     d,5             ; line 5
+        mvi     e,16            ; column 16
+        mvi     a,4             ; 3 blank lines
+        call    flower          ; flower box
+        mvi     d,7             ; line 7
+        mvi     e,25            ; column 25
+        call    setcur          ; cursor goes there
+        lhld    blkcnt          ; get the block count
+        call    prn16           ; print that as a decimal
+        call    cin2uppr        ; pause for key hit
+
+
+        jmp     mvua2           ; go get next tagged file and do it all again
 mvuae1:
         lxi     d,cpysr1        ; message about unable to open file
         call    perr            ; print error message
@@ -930,20 +970,6 @@ prnvars:
         call    prn8            ;
         mvi     a,' '           ;
         call    pchar           ;
-        lxi     h,tags          ;
-        mvi     c,tagcnt        ;
-dbgl1:
-        dcr     c               ;
-        jz      dbgl2           ;
-        mov     a,m             ;
-        call    phex            ;
-        mvi     a,' '           ;
-        call    pchar           ;
-        inx     h               ;
-        jmp     dbgl1           ;
-dbgl2:
-        mvi     a,' '           ;
-        call    pchar           ;
         call    pchar           ;
         lxi     h,newstk        ;
         lxi     b,-256          ;
@@ -959,6 +985,17 @@ dbgl2:
         call    pchar           ;
         mvi     a,'B'           ;
         call    pchar           ;
+        mvi     a,' '           ;
+        call    pchar           ;
+        call    pchar           ;
+        mvi     c,11            ;
+        lxi     h,fcb1+1        ;
+prnv1:
+        mov     a,m             ;
+        call    pchar           ;
+        inx     h
+        dcr     c               ;
+        jnz     prnv1           ;
         pop     psw             ;
         pop     b               ;
         pop     d               ;
@@ -2539,7 +2576,7 @@ uirevrs db      01bh,'[7m$'
 uireset db      01bh,'[0m$'
 uiclnln db      '                                  $'
 uistr1  db      'Selected file (N/P/U/<Space>): $'
-uistr2  db      'Command (D/C/T/R/L/X, H-help)? $'
+uistr2  db      'Command (D/C/T/R/M/L/X, H-help)? $'
 delser  db      'Tag one or more files for deletion!$'
 cpyser  db      '   Tag one or more files to copy!$'
 renser  db      '  Tag one or more files to rename!$'
@@ -2601,12 +2638,14 @@ hlpcmds db      '+ Commands:',CR,LF,CR,LF
         db      '    displayed as text while other files displayed as hex dump.',CR,LF
         db      '  + R - this will rename all tagged files.  User will be',CR,LF
         db      '    prompted for a new name for each file.',CR,LF
+        db      '  + M - this will move all tagged files to another user area',CR,LF
         db      '  + L - "log into" a new disk and show files on that disk',CR,LF,CR,LF,'$'
 hlpshrt db      ' Short command help:',CR,LF
         db      ' D - delete one or more files',CR,LF
         db      ' C - copy one or more files',CR,LF
         db      ' T - display one or more files',CR,LF
         db      ' R - rename one or more files',CR,LF
+        db      ' M - move file to another user area',CR,LF
         db      ' L - change disk drive',CR,LF
         db      ' X - Exit the program',CR,LF,CR,LF
         db      ' Short navigation help:',CR,LF
