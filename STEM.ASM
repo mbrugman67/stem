@@ -754,11 +754,6 @@ renfl:
         call    perr            ; display error message
         jmp     ren1            ; go try again
 
-<<<<<<< HEAD
-=======
-
-
-
 mvua:                           ; move a file to another user area
         cpi     'M'             ; User wants to move?
         jnz     uihelp          ; nope, go to help
@@ -881,14 +876,6 @@ mvuadn:
         jmp     usrlp0          ; go back for next UI interaction
 
 
-
-
-
-
-
-
->>>>>>> refs/remotes/origin/main
-        ; Display help information
 uihelp:
         cpi     'H'             ; User wants help info
         jnz     uilog           ; nope, go to log drive
@@ -1056,58 +1043,7 @@ help:
         call    sys             ; syscall
         lxi     d,hlpshrt       ; short help message
         mvi     c,strout        ; display string
-<<<<<<< HEAD
-        call    sys             ; syscall
-        call    crlf            ; newline
-        lxi     d,shlp002       ; short help message
-        mvi     c,strout        ; display string
-        call    sys             ; syscall
-        call    crlf            ; newline
-        lxi     d,shlp003       ; short help message
-        mvi     c,strout        ; display string
-        call    sys             ; syscall
-        call    crlf            ; newline
-        lxi     d,shlp004       ; short help message
-        mvi     c,strout        ; display string
-        call    sys             ; syscall
-        call    crlf            ; newline
-        lxi     d,shlp005       ; short help message
-        mvi     c,strout        ; display string
-        call    sys             ; syscall
-        call    crlf            ; newline
-        lxi     d,shlp006       ; short help message
-        mvi     c,strout        ; display string
-        call    sys             ; syscall
-        call    crlf            ; newline
-        lxi     d,shlp012       ; short help message
-        mvi     c,strout        ; display string
-        call    sys             ; syscall
-        call    crlf            ; newline
-        call    crlf            ; extra newline
-        lxi     d,shlp007       ; short help message
-        mvi     c,strout        ; display string
-        call    sys             ; syscall
-        call    crlf            ; newline
-        lxi     d,shlp008       ; short help message
-        mvi     c,strout        ; display string
-        call    sys             ; syscall
-        call    crlf            ; newline
-        lxi     d,shlp009       ; short help message
-        mvi     c,strout        ; display string
-        call    sys             ; syscall
-        call    crlf            ; newline
-        lxi     d,shlp010       ; short help message
-        mvi     c,strout        ; display string
-        call    sys             ; syscall
-        call    crlf            ; newline
-        lxi     d,shlp011       ; short help message
-        mvi     c,strout        ; display string
-        call    sys             ; syscall
-        call    crlf            ; newline
-        call    crlf            ; extra newline
-=======
-        call    sys             ; do the syscall
->>>>>>> refs/remotes/origin/main
+        call    sys             ; display
         lxi     d,contmsg       ; continue message
         mvi     c,strout        ; display string
         call    sys             ; syscall
@@ -2517,17 +2453,6 @@ prnui:
         mvi     a,':'           ; trailing colon after drive letter
         call    pchar           ; print to terminal
         lxi     d,fndstr5       ; " user area "... message
-<<<<<<< HEAD
-        mvi     c,strout        ; print string
-        call    sys             ; CP/M
-        mvi     c,guser         ; syscall to get/set current User Area
-        mvi     e,0ffh          ; request to get user area
-        call    sys             ; CP/M gimme current user area, result in A
-        mov     l,a             ; put that value into L for prn8 routine
-        call    prn8            ; print user area number
-        lxi     d,fndstr2       ; " (total of  " message
-=======
->>>>>>> refs/remotes/origin/main
         mvi     c,strout        ; print string
         call    sys             ; CP/M
         mvi     c,guser         ; syscall to get/set current User Area
