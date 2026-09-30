@@ -42,7 +42,7 @@
 ;****************************************************
 ; Is debug enabled?
 ;****************************************************
-DEBUG   equ     1               ; any non-zero enables debug code
+DEBUG   equ     0               ; any non-zero enables debug code
 
 ;****************************************************
 ; Entry point for FDOS, BIOS, CP/M system calls
@@ -763,7 +763,7 @@ mvua:                           ; move a file to another user area
         lxi     d,mvuaser       ; error message for no files selected
         call    perr            ; print the error message in a flower box
         jmp     usrlp0          ; redraw all
-mvua1:
+mvua1:                          ; get target user area
         mvi     d,5             ; line 5
         mvi     e,16            ; column 16
         mvi     a,4             ; 3 blank lines
@@ -779,7 +779,7 @@ mvua1:
         mov     c,a             ; save returned byte for now
         mov     a,b             ; get return code
         ora     a               ; is it zero?
-        jnz     usr2            ; nope - go get it again!
+        jnz     mvua1           ; nope - go get it again!
         mov     a,c             ; get selection from user
         sta     trgtua          ; save it to ram
         mvi     c,guser         ; syscall to get/set current User Area
@@ -811,7 +811,7 @@ mvua2:                          ; loop through tagged files
         call    sys             ; syscall to delete
         lxi     d,fcb2          ; FCB
         mvi     c,fmake         ; syscall to make a file
-        call    sys             ; make a new file in the target user area
+        call    sys             ; make a new file in the target user area (opens file)
         lda     srcua           ; get source file's user area
         mov     e,a             ; put it in E register
         mvi     c,guser         ; syscall to set user area
@@ -824,13 +824,35 @@ mvua2:                          ; loop through tagged files
         jz      mvuae1          ; jump to error message
         lxi     h,0             ; zero H/L
         shld    blkcnt          ; zero block count
+        mvi     d,5             ; line 5
+        mvi     e,16            ; column 16
+        mvi     a,6             ; 5 blank lines
+        call    flower          ; flower box
+        mvi     d,7             ; line 7
+        mvi     e,28            ; column 28
+        call    setcur          ; cursor goes there
+        lxi     d,cpyua1        ; first part of copying text
+        mvi     c,strout        ; print string fuction
+        call    sys             ; syscall
+        call    prnname         ; print file name
+        mvi     d,8             ; line 8
+        mvi     e,37            ; column 37
+        call    setcur          ; put cursor at 8,37
+        lxi     d,cpyua2        ; second part of copying text
+        mvi     c,strout        ; print string function
+        call    sys             ; syscall
 mvua3:                          ; read source, write dest
         lhld    blkcnt          ; get block count
         inx     h               ; increment it
         shld    blkcnt          ; save it
+        mvi     d,8             ; line 8
+        mvi     e,43            ; column 43
+        call    setcur          ; put cursor at 8,43
+        call    prn16           ; print block count
         lda     srcua           ; get source file's user area
         mov     e,a             ; put it in E register
         mvi     c,guser         ; syscall to set user area
+        call    sys             ; do the call
         lxi     d,fcb1          ; FCB
         mvi     c,rdseq         ; read block
         call    sys             ; syscall
@@ -843,26 +865,22 @@ mvua3:                          ; read source, write dest
         lxi     d,fcb2          ; get FCB again
         mvi     c,wrseq         ; write this block
         call    sys             ; syscall
-        jmp     mvua3           ; go get next file
+        jmp     mvua3           ; go get next file block
 mvua4:                          ; close dest file; no need to close source
         lda     trgtua          ; dest is in target user area
+        mov     e,a             ; put it into E
         mvi     c,guser         ; syscall to set it
         call    sys             ; go set target user area
         lxi     d,fcb2          ; new file's final fcb
         mvi     c,fclose        ; close to update on-disk FCB
         call    sys             ; syscall
-        mvi     d,5             ; line 5
-        mvi     e,16            ; column 16
-        mvi     a,4             ; 3 blank lines
-        call    flower          ; flower box
-        mvi     d,7             ; line 7
-        mvi     e,25            ; column 25
-        call    setcur          ; cursor goes there
-        lhld    blkcnt          ; get the block count
-        call    prn16           ; print that as a decimal
-        call    cin2uppr        ; pause for key hit
-
-
+        mvi     d,9             ; line 9
+        mvi     e,28            ; column 28
+        call    setcur          ; put cursor there
+        lxi     d,contmsg       ; "Press any key"... message
+        mvi     c,strout        ; print string
+        call    sys             ; syscall
+        call    cin2uppr        ; wait for keypress
         jmp     mvua2           ; go get next tagged file and do it all again
 mvuae1:
         lxi     d,cpysr1        ; message about unable to open file
@@ -875,7 +893,7 @@ mvuadn:
         call    sys             ; switch to source user area
         jmp     usrlp0          ; go back for next UI interaction
 
-
+        ; Print help stuffs
 uihelp:
         cpi     'H'             ; User wants help info
         jnz     uilog           ; nope, go to log drive
@@ -1929,7 +1947,7 @@ perr:
         lxi     d,uireset       ; back to normal text
         mvi     c,strout        ; print
         call    sys             ; syscall
-        mvi     d,8             ; line 7
+        mvi     d,8             ; line 8
         mvi     e,28            ; column 28
         call    setcur          ; put cursor there
         lxi     d,contmsg       ; "Press any key"... message
@@ -2550,7 +2568,7 @@ canary  db      0beh,0efh,0cah,0feh
 errcan  db      'ERROR - Stack is corrupt!',CR,LF,'$'
 flowr1  db      ' +--------------------------------------------------+ $'
 flowr2  db      ' |                                                  | $'
-stemver db      'STEM v0.9.4$'
+stemver db      'STEM v0.9.5$'
 welcom1 db      'An Altair 8800 File Manager$'
 welcom2 db      '2026 Mattydyne Heavy Industries$'
 welcom3 db      01bh,'[1m"H" for help, any other key to start',01bh,'[0m',CR,LF,'$'
@@ -2580,6 +2598,7 @@ badfnm  db      '          BAD FILE NAME$'
 logerr  db      '     DISK x: IS NOT AVAILABLE!$'
 mvuaer1 db      '  SELECT A DIFFERENT USER AREA!$'
 cpyok   db      ' blocks copied.$'
+mvuaok  db      ' blocks copied to user area $'
 typhdr  db      'Displaying file $'
 typftr  db      'Press <SPACE> to continue, any other to exit$'
 typend  db      'End of file, any key to continue$'
@@ -2588,7 +2607,9 @@ delmsg  db      'Delete file $'
 cpymsg1 db      'Copy file $'
 renmsg1 db      'Rename file $'
 typmsg1 db      'Display file $'
-cpymsg2 db      'Enter new filename> $'
+cpyua1  db      'Copying file $'
+cpyua2  db      'block $'
+cpymsg2 db      'Enter new filename >$'
 uichyn  db      ' (Y/N)? $'
 uichyna db      ' (Y/N/A)? $'
 logmsg  db      'Select new disk letter: $'
@@ -2628,14 +2649,14 @@ hlpcmds db      '+ Commands:',CR,LF,CR,LF
         db      '    displayed as text while other files displayed as hex dump.',CR,LF
         db      '  + R - this will rename all tagged files.  User will be',CR,LF
         db      '    prompted for a new name for each file.',CR,LF
-        db      '  + M - this will move all tagged files to another user area',CR,LF
+        db      '  + M - this will copy all tagged files to another user area',CR,LF
         db      '  + L - "log into" a new disk and show files on that disk',CR,LF,CR,LF,'$'
 hlpshrt db      ' Short command help:',CR,LF
         db      ' D - delete one or more files',CR,LF
         db      ' C - copy one or more files',CR,LF
         db      ' T - display one or more files',CR,LF
         db      ' R - rename one or more files',CR,LF
-        db      ' M - move file to another user area',CR,LF
+        db      ' M - copy file to another user area',CR,LF
         db      ' L - change disk drive',CR,LF
         db      ' X - Exit the program',CR,LF,CR,LF
         db      ' Short navigation help:',CR,LF
