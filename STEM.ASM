@@ -47,7 +47,8 @@ DEBUG   equ     0               ; any non-zero enables debug code
 ;****************************************************
 ; Entry point for FDOS, BIOS, CP/M system calls
 ;****************************************************
-sys     equ     5               ; entry point for system (dos)
+sys     equ     5               ; entry point for CP/M BDOS calls
+bios    equ     1               ; vector to vector table for CP/M BIOS calls
 
 ;***************************************************
 ; syscall functions
@@ -81,7 +82,7 @@ fname   equ     23              ; rename file
 lvect   equ     24              ; return login vector
 getdsk	equ     25              ; return current disk
 setdma	equ     26              ; set DMA address
-alloc	equ     27              ; get address (alloc)
+alloc	equ     27              ; get address (alloc vector)
 pdsk	equ     28              ; protect disk
 getrov	equ     29              ; get R/O vector
 setatt	equ     30              ; set file attributes
@@ -93,6 +94,15 @@ fsize	equ     35              ; compute file size
 frset	equ     36              ; set random record
 rstdrv	equ     37              ; reset drive
 wrtzer	equ     40              ; write random with zero fill
+
+;***************************************************
+; bios functions
+; Generally, add this to the address pointed to by
+; the warm boot vector to get a vector to jump to
+; that function^M
+;***************************************************
+biosdsk equ     018h            ; offset to get pointer to DPH
+
 
 ;****************************************************
 ; CP/M constants/values/addresses
@@ -129,6 +139,11 @@ uinplen equ     40              ; length of user input buffer
         shld    orgstk          ; save original stack pointer to memory
         lxi     sp,newstk       ; set stack pointer to our new stack
 
+        ; Call the disk capacity routines on the starting disk
+        mvi     c,getdsk        ; syscall to get current logged disk
+        call    sys             ; do the syscall
+        call    chkdsk          ; initial call to get stats for starting disk
+
         ; Draw the "Welcome" header over whatever is on the screen
         mvi     d,5             ; flower box at line 5
         mvi     e,16            ; flower box at column 16
@@ -158,11 +173,11 @@ uinplen equ     40              ; length of user input buffer
         mvi     c,strout        ; load reg C with command to print string
         lxi     d,welcom3       ; point to address of welcome #3 string
         call    sys             ; call the system function to print string
-        call    tstdrvs         ; "log in" all hardware drives, just to check validity
         call    cin2uppr        ; get input
         cpi     'H'             ; did user hit "H"?
         jnz     usrlp0          ; nope
         call    help            ; show help
+
 
         ; start of main loop.  Entering at 'usrlp0' will result in a total
         ; re-read of filenames and screen redraw.  Entering at 'uinext' will
@@ -170,6 +185,7 @@ uinplen equ     40              ; length of user input buffer
 usrlp0:
         call    clrtags         ; clear all file tags
         call    listfls         ; load and list files
+        call    calcdsk         ; calc how much disk is used
         call    prnui           ; print user interface commands/info
 uinext:                         ; user UI interaction loop
         call    stkchk          ; check stack integrity
@@ -924,13 +940,16 @@ uilog1:
         jm      uilog1          ; bad input
         cpi     'Q'             ; highest drive
         jp      uilog1          ; bad input
-        sta     drvtmp          ; save drive letter in temp
         sui     'A'             ; move from 'A' to 0, etc
-        mov     e,a             ; move to D for syscall
-        call    isdskok         ; check to see if disk is online
+        sta     drvtmp          ; save drive letter in temp
+        call    chkdsk          ; check to see if disk is available
+        mov     a,h             ; return from call is disk capacity in KB
+        ora     l               ; in H/L reg, zero if disk is not available
         jz      uilog2          ; it is not!
-        mvi     c,seldsk        ; select disk
-        call    sys             ; syscall
+        lda     drvtmp          ; get drive selection again
+        mov     e,a             ; put it into E
+        mvi     c,seldsk        ; change disk BDOS call
+        call    sys             ; CP/M disk change
         jmp     usrlp0          ; go read new disk and list files
 uilog2:
         lxi     d,logerr        ; Error message
@@ -938,6 +957,7 @@ uilog2:
         lxi     b,31            ; length of error message
         call    memcpy          ; cpy msg into buffer
         lda     drvtmp          ; get user's drive choice
+        adi     'A'             ; offset for ASCII "A"
         lxi     d,tmpmsg+10     ; 10 characters in is placeholder for disk ID
         stax    d               ; store the drive letter there
         lxi     d,tmpmsg        ; get the start of the buffer again
@@ -979,6 +999,14 @@ prnvars:
         mvi     a,' '           ;
         call    pchar           ;
         call    pchar           ;
+        mvi     a,'m'           ;
+        call    pchar           ;
+        mvi     a,'e'           ;
+        call    pchar           ;
+        mvi     a,'m'           ;
+        call    pchar           ;
+        mvi     a,':'           ;
+        call    pchar           ;
         lxi     h,newstk        ;
         lxi     b,-256          ;
         dad     b               ;
@@ -996,14 +1024,24 @@ prnvars:
         mvi     a,' '           ;
         call    pchar           ;
         call    pchar           ;
-        mvi     c,11            ;
-        lxi     h,fcb1+1        ;
-prnv1:
-        mov     a,m             ;
+        mvi     a,'d'           ;
         call    pchar           ;
-        inx     h
-        dcr     c               ;
-        jnz     prnv1           ;
+        mvi     a,'s'           ;
+        call    pchar           ;
+        mvi     a,'k'           ;
+        call    pchar           ;
+        mvi     a,':'           ;
+        call    pchar           ;
+        lhld    dskusd          ;
+        call    prn16           ;
+        mvi     a,'/'           ;
+        call    pchar           ;
+        lhld    dskcap          ;
+        call    prn16           ;
+        mvi     a,'K'           ;
+        call    pchar           ;
+        mvi     a,'B'           ;
+        call    pchar           ;
         pop     psw             ;
         pop     b               ;
         pop     d               ;
@@ -1025,30 +1063,6 @@ stkchk:
         lxi     b,4             ; 4 bytes to compare
         call    memcmp          ; compare buffers
         ret                     ; all done
-
-;
-; tstdrvs
-; Try to find a file on the first 4 drives.  This will "log"
-; them in CP/M, so that they show up in the "logged in vector"
-tstdrvs:
-        lxi     d,schfcb        ; point to the "find any file" fcb template
-        lxi     h,fcb1          ; point to the default file control block
-        lxi     b,fcblen        ; length of FCB
-        call    memcpy          ; copy template to default FCB
-        mvi     a,1             ; set drive 1 (A)
-        sta     drvtmp          ; save that for now
-tstd1:
-        lda     drvtmp          ; get current drive select
-        lxi     d,fcb1          ; point to default FCB
-        stax    d               ; store drive number in byte 0
-        mvi     c,srchf         ; syscall function to find file
-        call    sys             ; do the syscall
-        lda     drvtmp          ; go back and get the drive number
-        inr     a               ; increment
-        sta     drvtmp          ; save it
-        cpi     5               ; repeat drives A through D
-        rz                      ; if so, we're done; return to caller
-        jmp     tstd1           ; go search on next drive
 
 ;
 ; help
@@ -1093,41 +1107,180 @@ help:
         ret                     ;
 
 ;
-; isdskok
-; Check if selected disk is online
-; IN:
-;       A - disk number (A=0, B=1, etc)
-; OUT:
-;       A - zero means disk offline, any
-;           non-zero means disk online and OK
-isdskok:
-        push    b               ;
-        push    h               ;
-        push    psw             ; syscall will stomp A
-        mvi     c,lvect         ; get the "log in vector", a bitmap of OK drives
-        call    sys             ; do the syscall
-        pop     psw             ; restore A
-        cpi     8               ; are we talking drives 0 to 7?
-        jm      dskoklo         ; low byte
-        mov     b,h             ; selected drive is in the H register
-        sbi     8               ; subtract 8 from A
-        jmp     isdsk1
-dskoklo:
-        mov     b,l
-isdsk1:
-        mov     c,a             ; get inx into C
-        ora     a               ; initial check for zero
-        mvi     a,1             ; set first bit
-isdsk2:
-        jz      isdsk3          ; done shifting
-        rlc                     ; shift
-        dcr     c               ; sets zero flag
-        jmp     isdsk2          ; shift again
-isdsk3:
-        ana     b               ; check shifted bit against vector byte
-        pop     h               ;
-        pop     b               ;
-        ret
+; chkdsk
+; Change disk and get disk size.  Attempt to switch to another
+; disk using BIOS (instead of BDOS).  If disk is there, then
+; return disk capacity in KB in H/L; zero if disk is not there.
+;
+; This looks a little goofy where you see the `call  0000h` instruction.
+; The actual address of the call in BIOS is dependent on the size
+; of memory that this copy of CP/M is built for.  The 16-bit value at
+; address 0001h points to a vector table of BIOS functions.  We just
+; need to know the offset into the table.  Those values are fixed; for
+; BIOS SELDISK function, the offset is 24 bytes.  So, load the value
+; at address 0001, add 24 to it, and that is the address of the
+; BIOS seldisk function.  Calculate that and put it into memory
+; where the target of the call function is sitting (chkdsk + 1
+; byte).
+;
+; There's also a little goofiness in the decoding of the disk Parameter
+; header and disk paramater block.
+;
+; IN
+;       A - disk index (A=0, B=1, etc.)
+; OUT
+;       H/L - 0 means no disk, otherwise is capacity in KB
+;       dskcap - disk capacity in KB
+;
+chkdsk:
+        lxi     h,0             ; zero H/L
+        shld    dskcap          ; set current disk capacity to zero KB
+        lhld    bios            ; get BIOS entry address
+        lxi     b,biosdsk       ; get offset to select disk BIOS function
+        dad     b               ; add index of BIOS call
+        shld    chkdsk1+1       ; save address as call target
+        mvi     e,0             ; treat as a newly-loaded disk
+        mov     c,a             ; drive goes in C for BIOS call
+        sta     tmpdrv          ; save drive selection
+chkdsk1:
+        call    0000h           ; the 0000 is updated to address
+        mov     a,h             ; return from call is address of DPH
+        ora     l               ; if zero, drive is not there
+        jnz     chkdsk2         ; start calcing disk capacity
+        ret                     ; return now, no disk present here
+chkdsk2:                        ; DPH (Disk Parameter Header) address is in H/L
+        lxi     d,0ah           ; add 0x0a to address of DPH
+        dad     d               ; that is address of DPB (Disk Parameter Block)
+        xchg                    ; put that from H/L to D/E
+        ldax    d               ; get byte at that address
+        mov     l,a             ; that is the low byte of address of DPB
+        inx     d               ; increment to next byte
+        ldax    d               ; that's high byte of address of DPB
+        mov     h,a             ; now H/L has address pointed to by DPH + 0x0a
+        xchg                    ; put that into D/E
+        inx     d               ; skip
+        inx     d               ; two bytes
+        ldax    d               ; and load BSH into A (that's block shift count)
+        sbi     3               ; subtract 3; now it's left shift count for block size
+        sta     BSH             ; save it to BSH
+        inx     d               ; skip
+        inx     d               ;  two
+        inx     d               ;   bytes
+        ldax    d               ; this is the low byte of block count
+        mov     l,a             ; save that
+        inx     d               ; increment to the next byte
+        ldax    d               ; which is the high byte of block count
+        mov     h,a             ; save that.  Now H/L is 16-bit block count
+        lxi     b,-1            ; decrement by
+        dad     b               ; one
+        shld    BCNT            ; save block count
+        lda     BSH             ; get shift count
+        mov     b,a             ; save it in B
+        cpi     0               ; initial test for zero
+chkdsk3:                        ; multipy block count by block shift count
+        jz      chkdsk4         ; no more shifts necessary
+        stc                     ; set carry bit
+        cmc                     ; wait, no clear the carry bit!
+        mov     a,l             ; get low byte
+        ral                     ; multiply by 2 (shift one left)
+        mov     l,a             ; save it
+        mov     a,h             ; get high byte
+        ral                     ; multiply by 2 (shift one left with carry from low)
+        mov     h,a             ; save it
+        dcr     b               ; decrement shift count, sets Z flag
+        jmp     chkdsk3         ; next shift
+chkdsk4:
+        shld    dskcap          ; store disk capacity in KB
+        ret                     ; return capacity (KB) in H/L
+
+;
+; calcdsk
+; Calculate used space
+;
+calcdsk:
+        mvi     c,alloc         ; BDOS syscall to get allocation vector
+        call    sys             ; do the syscall, H/L has address of allocation vector
+        xchg                    ; drop address of vector into D/E
+        lhld    BCNT            ; get disk block count into H/L
+        lxi     b,0             ; clear B/C
+calcdlp:                        ; start counting bits in vector
+        ldax    d               ; get current vector byte
+        ani     080h            ; and with bit 7
+        jz      calcds7         ; bit set?
+        inx     b               ; increment used block count
+calcds7:
+        ldax    d               ; get current vector byte
+        ani     040h            ; and with bit 6
+        jz      calcds6         ; bit set?
+        inx     b               ; increment used block count
+calcds6:
+        ldax    d               ; get current vector byte
+        ani     020h            ; and with bit 5
+        jz      calcds5         ; bit set?
+        inx     b               ; increment used block count
+calcds5:
+        ldax    d               ; get current vector byte
+        ani     010h            ; and with bit 4
+        jz      calcds4         ; bit set?
+        inx     b               ; increment used block count
+calcds4:
+        ldax    d               ; get current vector byte
+        ani     08h             ; and with bit 3
+        jz      calcds3         ; bit set?
+        inx     b               ; increment used block count
+calcds3:
+        ldax    d               ; get current vector byte
+        ani     04h             ; and with bit 2
+        jz      calcds2         ; bit set?
+        inx     b               ; increment used block count
+calcds2:
+        ldax    d               ; get current vector byte
+        ani     02h             ; and with bit 1
+        jz      calcds1         ; bit set?
+        inx     b               ; increment used block count
+calcds1:
+        ldax    d               ; get current vector byte
+        ani     01h             ; and with bit 0
+        jz      calcds0         ; bit set?
+        inx     b               ; increment used block count
+calcds0:
+        inx     d               ; next byte in usage vector
+        dcx     h               ; decrement block count
+        dcx     h               ; decrement block count
+        dcx     h               ; decrement block count
+        dcx     h               ; decrement block count
+        dcx     h               ; decrement block count
+        dcx     h               ; decrement block count
+        dcx     h               ; decrement block count
+        dcx     h               ; decrement block count
+        mov     a,h             ; need to check 16-bit for less than 8
+        cpi     0               ; is high byte non-zero
+        jnz     calcdlp         ; go check next byte in the vector
+        mov     a,l             ; high byte is zero, check low byte
+        ani     0f0h            ; anything in the high nibble?
+        jnz     calcdlp         ; nope, go back for the next
+        mov     h,b             ; need to put value into from
+        mov     l,c             ; B/C to H/L for shift and return
+        lda     BSH             ; get shift count
+        mov     b,a             ; save it in B
+        cpi     0               ; initial test for zero
+calcsh:                         ; multipy block count by block shift count
+        jz      calcret         ; no more shifts necessary
+        stc                     ; set carry bit
+        cmc                     ; wait, no clear the carry bit!
+        mov     a,l             ; get low byte
+        ral                     ; multiply by 2 (shift one left)
+        mov     l,a             ; save it
+        mov     a,h             ; get high byte
+        ral                     ; multiply by 2 (shift one left with carry from low)
+        mov     h,a             ; save it
+        dcr     b               ; decrement shift count, sets Z flag
+        jmp     calcsh          ; next shift
+calcret:
+        shld    dskusd          ; save
+        ret                     ;
+
+
 
 ;
 ; getfnm
@@ -2366,6 +2519,7 @@ prnname:
         mvi     d,8             ; 8 characters in filename portion
 prnnm2:
         mov     a,m             ; get next char
+        ani     07fh            ; mask off high bit - the are user attributes
         inx     h               ; increment buffer pointer
         cpi     ' '             ; is it a space?
         jz      prnnm3          ; don't print a space
@@ -2378,6 +2532,7 @@ prnnm3:
         mvi     d,3             ; 3 chars in extension portion
 prnnm4:
         mov     a,m             ; get next char
+        ani     07fh            ; mask off high bit - attrs for R/O, sys, archive
         inx     h               ; increment buffer pointer
         call    pchar           ; print it
         dcr     d               ; decrement char count, sets Z flag
@@ -2459,7 +2614,7 @@ prnui:
         push    d               ;
         push    h               ;
         mvi     d,1             ; new cursor position, line 1
-        mvi     e,7             ; column 7
+        mvi     e,3             ; column 3
         call    rstline         ; clear current line,
         mvi     c,strout        ; print string
         lxi     d,fndstr1       ; "Listing of drive " message
@@ -2470,6 +2625,7 @@ prnui:
         call    pchar           ; print that
         mvi     a,':'           ; trailing colon after drive letter
         call    pchar           ; print to terminal
+        mvi     a,' '           ; space
         lxi     d,fndstr5       ; " user area "... message
         mvi     c,strout        ; print string
         call    sys             ; CP/M
@@ -2478,6 +2634,15 @@ prnui:
         call    sys             ; CP/M gimme current user area, result in A
         mov     l,a             ; put that value into L for prn8 routine
         call    prn8            ; print user area number
+        lxi     d,fndstr2       ; ' total files' message
+        mvi     c,strout        ; print string
+        call    sys             ; print it
+        lda     fcount          ; get filecount
+        mov     l,a             ; in reg L for prn8 func
+        call    prn8            ; print filecount
+        lxi     d,fndstr3       ; ' tagged files' message
+        mvi     c,strout        ; print string
+        call    sys             ; print it
         mvi     d,20            ; go to line 20
         mvi     e,1             ; column 1
         call    rstline         ; clear line
@@ -2513,7 +2678,7 @@ prnui2:
         mvi     c,strout        ; send that to terminal
         call    sys             ; syscall
         mvi     d,1             ; new cursor position, line 1
-        mvi     e,41            ; column 41 (just after user area number)
+        mvi     e,36            ; column 36 (just after user area number)
         call    setcur          ; put cursor there
         lxi     d,fndstr2       ; " (total of  " message
         mvi     c,strout        ; print string
@@ -2527,7 +2692,7 @@ prnui2:
         call    cnttags         ; get count of tagged files
         mov     l,a             ; it was in A, move to L for
         call    prn8            ; printing as 8-bit decimal
-        lxi     d,fndstr4       ; final part of top line
+        lxi     d,fndstr4       ; "tagged"... message
         mvi     c,strout        ; print string
         call    sys             ; syscall
         mvi     d,20            ; line 20
@@ -2568,7 +2733,7 @@ canary  db      0beh,0efh,0cah,0feh
 errcan  db      'ERROR - Stack is corrupt!',CR,LF,'$'
 flowr1  db      ' +--------------------------------------------------+ $'
 flowr2  db      ' |                                                  | $'
-stemver db      'STEM v0.9.5$'
+stemver db      'STEM v0.9.6$'
 welcom1 db      'An Altair 8800 File Manager$'
 welcom2 db      '2026 Mattydyne Heavy Industries$'
 welcom3 db      01bh,'[1m"H" for help, any other key to start',01bh,'[0m',CR,LF,'$'
@@ -2670,6 +2835,9 @@ hlpshrt db      ' Short command help:',CR,LF
 ;***************************************************
 orgstk  ds      2               ; original stack pointer
 dpbase  ds      2               ; Disk Parameter Base address
+cinst   ds      1               ; call instruction
+addr    ds      2               ; address of get translation table
+cret    ds      1               ; return instruction
 usrfnm  ds      fnlen+1         ; user entered filename buffer
 fcb2    ds      fcblen+1        ; another FCB for file operations
 allflag ds      1               ; flag to indicate "ALL" files
@@ -2683,10 +2851,15 @@ enttmp  ds      1               ; temp entry value
 fnstate ds      1               ; get filename state
 trgtua  ds      1               ; target user area for file move
 srcua   ds      1               ; source user area for file move
+tmpdrv  ds      1               ; drive switch temp variable
 typlins ds      1               ; line counter for file display
 typcols ds      1               ; column counter for file display
+BSH     ds      1               ; block shift count (for calc'ing disk capacity)
+BCNT    ds      2               ; block count for current disk
 typofst ds      2               ; hex dump offset for file display
 blkcnt  ds      2               ; generic block counter
+dskcap  ds      2               ; disk capacity in KB
+dskusd  ds      2               ; disk allocated in KB
 tmpmsg  ds      36              ; temp message buffer
 usrinp  ds      uinplen         ; user input buffer
 flposn  ds      2               ; position in file name array
