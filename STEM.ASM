@@ -2678,7 +2678,7 @@ prnui2:
         mvi     c,strout        ; send that to terminal
         call    sys             ; syscall
         mvi     d,1             ; new cursor position, line 1
-        mvi     e,41            ; column 41 (just after user area number)
+        mvi     e,36            ; column 36 (just after user area number)
         call    setcur          ; put cursor there
         lxi     d,fndstr2       ; " (total of  " message
         mvi     c,strout        ; print string
