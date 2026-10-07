@@ -7,7 +7,7 @@ The program name is `STEM` because CP/M doesn't have subdirectories, so anything
 
 ## Status
 ### Completed items:
-+ Loading/listing files on drives `A` to `D`
++ Loading/listing files on drives `A` to `P`
 + Switching CP/M "User Area"
 + File copy
   + Copy file on same drive, for example, copy `STUFF.TXT` to `STUFF.BAK`.  Both files will be in the current disk, current user area
@@ -19,14 +19,12 @@ The program name is `STEM` because CP/M doesn't have subdirectories, so anything
 
 ### Known issues and limitations
 + Program will load a maximum of 70 files per drive
-+ There is an assumption that the machine has 4 disk drives
 + ASCII/Text display pager makes some assumptions about what will fit on a screen.  Screen is assumed to be 80 columns by 24 lines
 
 ### TODO
 + Increase file capacity
   + The big thing is that the middle section of screen (file listing) will need to be scrollable independent of the rest of the screen
   + Tagging will need to be refactored, but not a big deal
-+ Do a better job of figuring out which drives are physically present, and which ones have disks loaded 
 + Add file/disk info, such as capacity, utilisation, sizes, etc.  This is part of above item
 + Add compression/decompression using standard ZIP algorithms
 
