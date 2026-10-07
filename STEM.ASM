@@ -42,7 +42,7 @@
 ;****************************************************
 ; Is debug enabled?
 ;****************************************************
-DEBUG   equ     1               ; any non-zero enables debug code
+DEBUG   equ     0               ; any non-zero enables debug code
 
 ;****************************************************
 ; Entry point for FDOS, BIOS, CP/M system calls
@@ -82,7 +82,7 @@ fname   equ     23              ; rename file
 lvect   equ     24              ; return login vector
 getdsk	equ     25              ; return current disk
 setdma	equ     26              ; set DMA address
-alloc	equ     27              ; get address (alloc)
+alloc	equ     27              ; get address (alloc vector)
 pdsk	equ     28              ; protect disk
 getrov	equ     29              ; get R/O vector
 setatt	equ     30              ; set file attributes
@@ -139,6 +139,11 @@ uinplen equ     40              ; length of user input buffer
         shld    orgstk          ; save original stack pointer to memory
         lxi     sp,newstk       ; set stack pointer to our new stack
 
+        ; Call the disk capacity routines on the starting disk
+        mvi     c,getdsk        ; syscall to get current logged disk
+        call    sys             ; do the syscall
+        call    chkdsk          ; initial call to get stats for starting disk
+
         ; Draw the "Welcome" header over whatever is on the screen
         mvi     d,5             ; flower box at line 5
         mvi     e,16            ; flower box at column 16
@@ -173,12 +178,14 @@ uinplen equ     40              ; length of user input buffer
         jnz     usrlp0          ; nope
         call    help            ; show help
 
+
         ; start of main loop.  Entering at 'usrlp0' will result in a total
         ; re-read of filenames and screen redraw.  Entering at 'uinext' will
         ; keep existing tags and files
 usrlp0:
         call    clrtags         ; clear all file tags
         call    listfls         ; load and list files
+        call    calcdsk         ; calc how much disk is used
         call    prnui           ; print user interface commands/info
 uinext:                         ; user UI interaction loop
         call    stkchk          ; check stack integrity
@@ -992,6 +999,14 @@ prnvars:
         mvi     a,' '           ;
         call    pchar           ;
         call    pchar           ;
+        mvi     a,'m'           ;
+        call    pchar           ;
+        mvi     a,'e'           ;
+        call    pchar           ;
+        mvi     a,'m'           ;
+        call    pchar           ;
+        mvi     a,':'           ;
+        call    pchar           ;
         lxi     h,newstk        ;
         lxi     b,-256          ;
         dad     b               ;
@@ -1009,14 +1024,24 @@ prnvars:
         mvi     a,' '           ;
         call    pchar           ;
         call    pchar           ;
-        mvi     c,11            ;
-        lxi     h,fcb1+1        ;
-prnv1:
-        mov     a,m             ;
+        mvi     a,'d'           ;
         call    pchar           ;
-        inx     h
-        dcr     c               ;
-        jnz     prnv1           ;
+        mvi     a,'s'           ;
+        call    pchar           ;
+        mvi     a,'k'           ;
+        call    pchar           ;
+        mvi     a,':'           ;
+        call    pchar           ;
+        lhld    dskusd          ;
+        call    prn16           ;
+        mvi     a,'/'           ;
+        call    pchar           ;
+        lhld    dskcap          ;
+        call    prn16           ;
+        mvi     a,'K'           ;
+        call    pchar           ;
+        mvi     a,'B'           ;
+        call    pchar           ;
         pop     psw             ;
         pop     b               ;
         pop     d               ;
@@ -1148,6 +1173,7 @@ chkdsk2:                        ; DPH (Disk Parameter Header) address is in H/L
         mov     h,a             ; save that.  Now H/L is 16-bit block count
         lxi     b,-1            ; decrement by
         dad     b               ; one
+        shld    BCNT            ; save block count
         lda     BSH             ; get shift count
         mov     b,a             ; save it in B
         cpi     0               ; initial test for zero
@@ -1163,9 +1189,98 @@ chkdsk3:                        ; multipy block count by block shift count
         mov     h,a             ; save it
         dcr     b               ; decrement shift count, sets Z flag
         jmp     chkdsk3         ; next shift
-        shld    dskcap          ; store disk capacity in KB
 chkdsk4:
+        shld    dskcap          ; store disk capacity in KB
         ret                     ; return capacity (KB) in H/L
+
+;
+; calcdsk
+; Calculate used space
+;
+calcdsk:
+        mvi     c,alloc         ; BDOS syscall to get allocation vector
+        call    sys             ; do the syscall, H/L has address of allocation vector
+        xchg                    ; drop address of vector into D/E
+        lhld    BCNT            ; get disk block count into H/L
+        lxi     b,0             ; clear B/C
+calcdlp:                        ; start counting bits in vector
+        ldax    d               ; get current vector byte
+        ani     080h            ; and with bit 7
+        jz      calcds7         ; bit set?
+        inx     b               ; increment used block count
+calcds7:
+        ldax    d               ; get current vector byte
+        ani     040h            ; and with bit 6
+        jz      calcds6         ; bit set?
+        inx     b               ; increment used block count
+calcds6:
+        ldax    d               ; get current vector byte
+        ani     020h            ; and with bit 5
+        jz      calcds5         ; bit set?
+        inx     b               ; increment used block count
+calcds5:
+        ldax    d               ; get current vector byte
+        ani     010h            ; and with bit 4
+        jz      calcds4         ; bit set?
+        inx     b               ; increment used block count
+calcds4:
+        ldax    d               ; get current vector byte
+        ani     08h             ; and with bit 3
+        jz      calcds3         ; bit set?
+        inx     b               ; increment used block count
+calcds3:
+        ldax    d               ; get current vector byte
+        ani     04h             ; and with bit 2
+        jz      calcds2         ; bit set?
+        inx     b               ; increment used block count
+calcds2:
+        ldax    d               ; get current vector byte
+        ani     02h             ; and with bit 1
+        jz      calcds1         ; bit set?
+        inx     b               ; increment used block count
+calcds1:
+        ldax    d               ; get current vector byte
+        ani     01h             ; and with bit 0
+        jz      calcds0         ; bit set?
+        inx     b               ; increment used block count
+calcds0:
+        inx     d               ; next byte in usage vector
+        dcx     h               ; decrement block count
+        dcx     h               ; decrement block count
+        dcx     h               ; decrement block count
+        dcx     h               ; decrement block count
+        dcx     h               ; decrement block count
+        dcx     h               ; decrement block count
+        dcx     h               ; decrement block count
+        dcx     h               ; decrement block count
+        mov     a,h             ; need to check 16-bit for less than 8
+        cpi     0               ; is high byte non-zero
+        jnz     calcdlp         ; go check next byte in the vector
+        mov     a,l             ; high byte is zero, check low byte
+        ani     0f0h            ; anything in the high nibble?
+        jnz     calcdlp         ; nope, go back for the next
+        mov     h,b             ; need to put value into from
+        mov     l,c             ; B/C to H/L for shift and return
+        lda     BSH             ; get shift count
+        mov     b,a             ; save it in B
+        cpi     0               ; initial test for zero
+calcsh:                         ; multipy block count by block shift count
+        jz      calcret         ; no more shifts necessary
+        stc                     ; set carry bit
+        cmc                     ; wait, no clear the carry bit!
+        mov     a,l             ; get low byte
+        ral                     ; multiply by 2 (shift one left)
+        mov     l,a             ; save it
+        mov     a,h             ; get high byte
+        ral                     ; multiply by 2 (shift one left with carry from low)
+        mov     h,a             ; save it
+        dcr     b               ; decrement shift count, sets Z flag
+        jmp     calcsh          ; next shift
+calcret:
+        shld    dskusd          ; save
+        ret                     ;
+
+
 
 ;
 ; getfnm
@@ -2404,6 +2519,7 @@ prnname:
         mvi     d,8             ; 8 characters in filename portion
 prnnm2:
         mov     a,m             ; get next char
+        ani     07fh            ; mask off high bit - the are user attributes
         inx     h               ; increment buffer pointer
         cpi     ' '             ; is it a space?
         jz      prnnm3          ; don't print a space
@@ -2416,6 +2532,7 @@ prnnm3:
         mvi     d,3             ; 3 chars in extension portion
 prnnm4:
         mov     a,m             ; get next char
+        ani     07fh            ; mask off high bit - attrs for R/O, sys, archive
         inx     h               ; increment buffer pointer
         call    pchar           ; print it
         dcr     d               ; decrement char count, sets Z flag
@@ -2616,7 +2733,7 @@ canary  db      0beh,0efh,0cah,0feh
 errcan  db      'ERROR - Stack is corrupt!',CR,LF,'$'
 flowr1  db      ' +--------------------------------------------------+ $'
 flowr2  db      ' |                                                  | $'
-stemver db      'STEM v0.9.5$'
+stemver db      'STEM v0.9.6$'
 welcom1 db      'An Altair 8800 File Manager$'
 welcom2 db      '2026 Mattydyne Heavy Industries$'
 welcom3 db      01bh,'[1m"H" for help, any other key to start',01bh,'[0m',CR,LF,'$'
@@ -2738,9 +2855,11 @@ tmpdrv  ds      1               ; drive switch temp variable
 typlins ds      1               ; line counter for file display
 typcols ds      1               ; column counter for file display
 BSH     ds      1               ; block shift count (for calc'ing disk capacity)
+BCNT    ds      2               ; block count for current disk
 typofst ds      2               ; hex dump offset for file display
 blkcnt  ds      2               ; generic block counter
 dskcap  ds      2               ; disk capacity in KB
+dskusd  ds      2               ; disk allocated in KB
 tmpmsg  ds      36              ; temp message buffer
 usrinp  ds      uinplen         ; user input buffer
 flposn  ds      2               ; position in file name array
