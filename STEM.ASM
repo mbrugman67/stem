@@ -408,6 +408,11 @@ cpybox:
         jz      cpy2            ; oboy, here we go
         jmp     cpybox          ; something else
 cpy2:
+        mvi     c,guser         ; syscall to get/set current User Area
+        mvi     e,0ffh          ; request to get user area
+        call    sys             ; CP/M gimme current user area, result in A
+        sta     srcua           ; save current user area in ram
+        sta     trgtua          ; save it to ram
         call    bldfcb          ; set up a file control block for source file
         mvi     d,5             ; line 5
         mvi     e,16            ; column 16
@@ -449,42 +454,7 @@ cpy3:                           ; start copy process, dest FCB is already in D/E
         jz      cpydfl          ; error message, close source file
         xra     a               ; zero A reg
         sta     eofflag         ; save as EOF flag
-        lxi     h,0             ; zero H/L register set
-        shld    blkcnt          ; save it to block count
-cpy4:                           ; FILE COPY HAPPENS THROUGH DMA BLOCK at 0x0080
-        lxi     d,fcb1          ; source file
-        mvi     c,rdseq         ; read a block function
-        call    sys             ; read the block
-        ora     a               ; check for end of file (any non-zero result)
-        jnz     cpy5            ; go clean up
-        lxi     d,fcb2          ; destination file
-        mvi     c,wrseq         ; write block function
-        call    sys             ; write the block
-        lhld    blkcnt          ; get block counter
-        inx     h               ; increment it
-        shld    blkcnt          ; save it
-        jmp     cpy4            ; back for next block
-cpy5:
-        lxi     d,fcb1          ; source file
-        mvi     c,fclose        ; close function
-        call    sys             ; go do it
-        lxi     d,fcb2          ; dest file
-        mvi     c,fclose        ; close function
-        call    sys             ; go do it
-        mvi     d,5             ; line 5
-        mvi     e,16            ; column 16
-        mvi     a,4             ; 3 blank lines
-        call    flower          ; flower box
-        mvi     d,7             ; line 7
-        mvi     e,25            ; column 25
-        call    setcur          ; cursor goes there
-        lhld    blkcnt          ; get the block count
-        call    prn16           ; print that as a decimal
-        lxi     d,cpyok         ; ' blocks copied' message
-        mvi     c,strout        ; print string function
-        call    sys             ; syscall
-        mvi     c,conin         ; wait for user keyboard hit
-        call    sys             ; before moving on
+        call    cpyfile         ; go copy the file
         jmp     cpy1            ; next tagged file
 cpyexst:
         lxi     d,fcb2          ; make sure we're pointing to dest file
@@ -838,65 +808,7 @@ mvua2:                          ; loop through tagged files
         call    sys             ; syscall
         cpi     0ffh            ; good result is 0,1,2,3; 255 is a failure
         jz      mvuae1          ; jump to error message
-        lxi     h,0             ; zero H/L
-        shld    blkcnt          ; zero block count
-        mvi     d,5             ; line 5
-        mvi     e,16            ; column 16
-        mvi     a,6             ; 5 blank lines
-        call    flower          ; flower box
-        mvi     d,7             ; line 7
-        mvi     e,28            ; column 28
-        call    setcur          ; cursor goes there
-        lxi     d,cpyua1        ; first part of copying text
-        mvi     c,strout        ; print string fuction
-        call    sys             ; syscall
-        call    prnname         ; print file name
-        mvi     d,8             ; line 8
-        mvi     e,37            ; column 37
-        call    setcur          ; put cursor at 8,37
-        lxi     d,cpyua2        ; second part of copying text
-        mvi     c,strout        ; print string function
-        call    sys             ; syscall
-mvua3:                          ; read source, write dest
-        lhld    blkcnt          ; get block count
-        inx     h               ; increment it
-        shld    blkcnt          ; save it
-        mvi     d,8             ; line 8
-        mvi     e,43            ; column 43
-        call    setcur          ; put cursor at 8,43
-        call    prn16           ; print block count
-        lda     srcua           ; get source file's user area
-        mov     e,a             ; put it in E register
-        mvi     c,guser         ; syscall to set user area
-        call    sys             ; do the call
-        lxi     d,fcb1          ; FCB
-        mvi     c,rdseq         ; read block
-        call    sys             ; syscall
-        ora     a               ; non-zero return?
-        jnz     mvua4           ; yes, we're done
-        lda     trgtua          ; get target user area
-        mov     e,a             ; put it in E register
-        mvi     c,guser         ; syscall to set user area
-        call    sys             ; switch to destination user area
-        lxi     d,fcb2          ; get FCB again
-        mvi     c,wrseq         ; write this block
-        call    sys             ; syscall
-        jmp     mvua3           ; go get next file block
-mvua4:                          ; close dest file; no need to close source
-        lda     trgtua          ; dest is in target user area
-        mov     e,a             ; put it into E
-        mvi     c,guser         ; syscall to set it
-        call    sys             ; go set target user area
-        lxi     d,fcb2          ; new file's final fcb
-        mvi     c,fclose        ; close to update on-disk FCB
-        call    sys             ; syscall
-        mvi     d,9             ; line 9
-        mvi     e,28            ; column 28
-        call    setcur          ; put cursor there
-        lxi     d,contmsg       ; "Press any key"... message
-        mvi     c,strout        ; print string
-        call    sys             ; syscall
-        call    cin2uppr        ; wait for keypress
+        call    cpyfile         ; go do file copy
         jmp     mvua2           ; go get next tagged file and do it all again
 mvuae1:
         lxi     d,cpysr1        ; message about unable to open file
@@ -1022,6 +934,15 @@ uistats:
         mvi     c,strout        ; print string
         call    sys             ; syscall
         lda     BSH             ; get block shift count
+        mov     b,a             ; put it into B
+        inr     b               ; for checking later
+        mvi     a,1             ; initial value
+uistat2:
+        dcr     b               ; decrement shift count
+        jz      uistat3         ; all done
+        ral                     ; shift left one
+        jmp     uistat2         ; next shift
+uistat3:
         mov     l,a             ; put into L for next call
         call    prn8            ; print it
         call    cin2uppr        ; wait for input
@@ -1343,8 +1264,6 @@ calcret:
         shld    dskusd          ; save
         ret                     ;
 
-
-
 ;
 ; getfnm
 ; Get user filename input.  Cursor should be in place and ready to go.
@@ -1462,7 +1381,6 @@ ginpok:                         ; return with success
 ginpret:
         ret                     ;
 
-
 ;
 ; cpyfile
 ; Copy file
@@ -1471,12 +1389,71 @@ ginpret:
 ;       fcb2   -> destination file FCB
 ;       srcua  -> source user area
 ;       trgtua -> target user area
-; Return
+;       Source and dest file must be open, all
+;       error checking done before calling!
 ;
+cpyfile:
 
-
-
-
+        lxi     h,0             ; zero H/L
+        shld    blkcnt          ; zero block count
+        mvi     d,5             ; line 5
+        mvi     e,16            ; column 16
+        mvi     a,6             ; 5 blank lines
+        call    flower          ; flower box
+        mvi     d,7             ; line 7
+        mvi     e,28            ; column 28
+        call    setcur          ; cursor goes there
+        lxi     d,cpyua1        ; first part of copying text
+        mvi     c,strout        ; print string fuction
+        call    sys             ; syscall
+        call    prnname         ; print file name
+        mvi     d,8             ; line 8
+        mvi     e,37            ; column 37
+        call    setcur          ; put cursor at 8,37
+        lxi     d,cpyua2        ; second part of copying text
+        mvi     c,strout        ; print string function
+        call    sys             ; syscall
+fcpylp:                         ; read source, write dest
+        lhld    blkcnt          ; get block count
+        inx     h               ; increment it
+        shld    blkcnt          ; save it
+        mvi     d,8             ; line 8
+        mvi     e,43            ; column 43
+        call    setcur          ; put cursor at 8,43
+        call    prn16           ; print block count
+        lda     srcua           ; get source file's user area
+        mov     e,a             ; put it in E register
+        mvi     c,guser         ; syscall to set user area
+        call    sys             ; do the call
+        lxi     d,fcb1          ; FCB
+        mvi     c,rdseq         ; read block
+        call    sys             ; syscall
+        ora     a               ; non-zero return?
+        jnz     fcpydn          ; yes, we're done
+        lda     trgtua          ; get target user area
+        mov     e,a             ; put it in E register
+        mvi     c,guser         ; syscall to set user area
+        call    sys             ; switch to destination user area
+        lxi     d,fcb2          ; get FCB again
+        mvi     c,wrseq         ; write this block
+        call    sys             ; syscall
+        jmp     fcpylp          ; go get next file block
+fcpydn:                         ; close dest file; no need to close source
+        lda     trgtua          ; dest is in target user area
+        mov     e,a             ; put it into E
+        mvi     c,guser         ; syscall to set it
+        call    sys             ; go set target user area
+        lxi     d,fcb2          ; new file's final fcb
+        mvi     c,fclose        ; close to update on-disk FCB
+        call    sys             ; syscall
+        mvi     d,9             ; line 9
+        mvi     e,28            ; column 28
+        call    setcur          ; put cursor there
+        lxi     d,contmsg       ; "Press any key"... message
+        mvi     c,strout        ; print string
+        call    sys             ; syscall
+        call    cin2uppr        ; wait for keypress
+        ret                     ;
 
 ;
 ; getnm1
