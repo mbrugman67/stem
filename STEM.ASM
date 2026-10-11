@@ -923,7 +923,7 @@ uihelp:
         ; disk will be re-listed.
 uilog:
         cpi     'L'             ; Log disk?
-        jnz     uiexit          ; Nope - check for exit
+        jnz     uistats         ; Nope - check for disk status
 uilog1:
         mvi     d,5             ; line 5
         mvi     e,16            ; column 16
@@ -963,6 +963,69 @@ uilog2:
         lxi     d,tmpmsg        ; get the start of the buffer again
         call    perr            ; display it
         jmp     usrlp0          ; go back and re-read current disk
+
+        ; Print disk statistics
+uistats:
+        cpi     'I'             ; User wants disk info
+        jnz     uiexit          ; nope, go to exit
+        mvi     d,5             ; line 5
+        mvi     e,16            ; column 16
+        mvi     a,6             ; 5 blank lines
+        call    flower          ; draw a flower box
+        mvi     d,6             ; line 6
+        mvi     e,30            ; column 30
+        call    setcur          ; cursor move
+        lxi     d,statln1       ; header
+        mvi     c,strout        ; print string
+        call    sys             ; syscall
+        mvi     d,6             ; still on line 6
+        mvi     e,52            ; replace "X" with drive letter
+        call    setcur          ; put curser in spot
+        mvi     c,getdsk        ; get current drive
+        call    sys             ; get drive number into A
+        adi     'A'             ; offset into ASCII
+        call    pchar           ; print drive letter
+        mvi     d,7             ; now line 7
+        mvi     e,31            ; column 31
+        call    setcur          ; put cursor there
+        lxi     d,statln2       ; 'capacity' message
+        mvi     c,strout        ; print string
+        call    sys             ; print that line
+        lhld    dskcap          ; get disk capacity in KB
+        call    prn16           ; print that
+        lxi     d,statkb        ; append that with 'KBytes'
+        mvi     c,strout        ; print string
+        call    sys             ; syscall
+        mvi     d,8             ; line 8
+        mvi     e,35            ; column 35
+        call    setcur          ; move cursor there
+        lxi     d,statln3       ; 'usage' message
+        mvi     c,strout        ; print string
+        call    sys             ; syscall
+        lhld    dskusd          ; get current used in KB
+        call    prn16           ; print it
+        lxi     d,statkb        ; append that with 'KBytes'
+        mvi     c,strout        ; print string
+        call    sys             ; syscall
+        mvi     d,9             ; line 9
+        mvi     e,33            ; column 33
+        call    setcur          ; put cursor there
+        lxi     d,statln4       ; block count message
+        mvi     c,strout        ; print string
+        call    sys             ; syscall
+        lhld    BCNT            ; get block count
+        call    prn16           ; print that
+        mvi     d,10            ; line 10
+        mvi     e,31            ; column 31
+        call    setcur          ; position cursor
+        lxi     d,statln5       ; kb/block message
+        mvi     c,strout        ; print string
+        call    sys             ; syscall
+        lda     BSH             ; get block shift count
+        mov     l,a             ; put into L for next call
+        call    prn8            ; print it
+        call    cin2uppr        ; wait for input
+        jmp     usrlp0          ; go back for complete redraw
 
         ; go back to CP/M.
 uiexit:
@@ -1398,6 +1461,22 @@ ginpok:                         ; return with success
         lxi     d,fcb2          ; good return with D pointing to our FCB
 ginpret:
         ret                     ;
+
+
+;
+; cpyfile
+; Copy file
+; Entry conditions:
+;       fcb1   -> source file FCB
+;       fcb2   -> destination file FCB
+;       srcua  -> source user area
+;       trgtua -> target user area
+; Return
+;
+
+
+
+
 
 ;
 ; getnm1
@@ -2712,13 +2791,13 @@ prnui2:
         mvi     c,strout        ; print
         call    sys             ; print it
         mvi     d,21            ; line 21
-        mvi     e,31            ; column 31 (this will clear previous command entry)
+        mvi     e,35            ; column 35 (this will clear previous command entry)
         call    setcur          ; put cursor there
         lxi     d,uiclnln       ; sequence to clear to end of line
         mvi     c,strout        ; send to terminal
         call    sys             ; syscall
         mvi     d,21            ; line 21
-        mvi     e,31            ; column 31 (this will clear previous command entry)
+        mvi     e,36            ; column 36 (location for command entry)
         call    setcur          ; put cursor there
         pop     h               ;
         pop     d               ;
@@ -2733,7 +2812,7 @@ canary  db      0beh,0efh,0cah,0feh
 errcan  db      'ERROR - Stack is corrupt!',CR,LF,'$'
 flowr1  db      ' +--------------------------------------------------+ $'
 flowr2  db      ' |                                                  | $'
-stemver db      'STEM v0.9.6$'
+stemver db      'STEM v0.9.7$'
 welcom1 db      'An Altair 8800 File Manager$'
 welcom2 db      '2026 Mattydyne Heavy Industries$'
 welcom3 db      01bh,'[1m"H" for help, any other key to start',01bh,'[0m',CR,LF,'$'
@@ -2749,7 +2828,7 @@ uirevrs db      01bh,'[7m$'
 uireset db      01bh,'[0m$'
 uiclnln db      '                                  $'
 uistr1  db      'Selected file (N/P/U/<Space>): $'
-uistr2  db      'Command (D/C/T/R/M/L/X, H-help)? $'
+uistr2  db      'Command (D/C/T/R/M/L/I/X, H-help)? $'
 delser  db      'Tag one or more files for deletion!$'
 cpyser  db      '   Tag one or more files to copy!$'
 renser  db      '  Tag one or more files to rename!$'
@@ -2780,6 +2859,12 @@ uichyna db      ' (Y/N/A)? $'
 logmsg  db      'Select new disk letter: $'
 usrcmsg db      'Select new user area (0-15): $'
 mvuamsg db      'Select target user area (0-15): $'
+statln1 db      'Information for drive X:$'
+statln2 db      'Capacity: $'
+statln3 db      'Used: $'
+statln4 db      'BLocks: $'
+statln5 db      'KB/Block: $'
+statkb  db      ' KBytes$'
 schfcb  db      0,'???????????',0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0
 blnkfcb db      0,'           ',0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0
 mworkng db      'Enumerating files in drive $'
@@ -2815,7 +2900,8 @@ hlpcmds db      '+ Commands:',CR,LF,CR,LF
         db      '  + R - this will rename all tagged files.  User will be',CR,LF
         db      '    prompted for a new name for each file.',CR,LF
         db      '  + M - this will copy all tagged files to another user area',CR,LF
-        db      '  + L - "log into" a new disk and show files on that disk',CR,LF,CR,LF,'$'
+        db      '  + L - "log into" a new disk and show files on that disk',CR,LF
+        db      '  + I - display drive info - capacity, usage, geometry',CR,LF,CR,LF,'$'
 hlpshrt db      ' Short command help:',CR,LF
         db      ' D - delete one or more files',CR,LF
         db      ' C - copy one or more files',CR,LF
@@ -2823,6 +2909,7 @@ hlpshrt db      ' Short command help:',CR,LF
         db      ' R - rename one or more files',CR,LF
         db      ' M - copy file to another user area',CR,LF
         db      ' L - change disk drive',CR,LF
+        db      ' I - display drive info',CR,LF
         db      ' X - Exit the program',CR,LF,CR,LF
         db      ' Short navigation help:',CR,LF
         db      ' N - select next file (wraps around end to beginning)',CR,LF
