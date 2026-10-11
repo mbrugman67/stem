@@ -25,7 +25,6 @@ The program name is `STEM` because CP/M doesn't have subdirectories, so anything
 + Increase file capacity
   + The big thing is that the middle section of screen (file listing) will need to be scrollable independent of the rest of the screen
   + Tagging will need to be refactored, but not a big deal
-+ Add file/disk info, such as capacity, utilisation, sizes, etc.  This is part of above item
 + Add compression/decompression using standard ZIP algorithms
 
 This is a work in progress.  As seen in the `TODO`, It is not feature complete.  Contributions are great!  Here are a couple of ways:
@@ -126,6 +125,7 @@ The program divides the screen into 3 sections:
     + `R` - Rename tagged files
     + `M` - Copy tagged files to a different User Area on the current disk
     + `L` - "Log" another disk (switch to another disk)
+    + `I` - Display disk geometry and size information 
     + `X` - Exit the program 
     + `H` - Display the help information
 
@@ -184,3 +184,8 @@ Tagged files will be copied to another user area with the `M` key.  A dialog wil
 Changing to another disk, "Logging In" in CP/M parlance, is done with the `L` key.  A dialog will prompt for new disk:
 
 ![log](./img/selectDisk.png)
+
+### Disk information
+Disk information is displayed with the `I` key.  The information shown is total disk capacity in KB, amount of disk allocated/used in KB, number of blocks on the disk, and the size of each block in KB.
+
+![info](./img/info.png)
