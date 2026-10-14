@@ -150,7 +150,7 @@ Copying a file to another drive can be acomplished by specifying that drive in t
 
 ![copyName](./img/copyName.png)
 
-After copying, a dialog will show how many 128KB blocks were copied:
+After copying, a dialog will show how many 128-byte blocks were copied:
 
 ![copyDone](./img/copyDone.png)
 
@@ -186,6 +186,14 @@ Changing to another disk, "Logging In" in CP/M parlance, is done with the `L` ke
 ![log](./img/selectDisk.png)
 
 ### Disk information
-Disk information is displayed with the `I` key.  The information shown is total disk capacity in KB, amount of disk allocated/used in KB, number of blocks on the disk, and the size of each block in KB.
+Disk information is displayed with the `I` key.  The information shown is total disk capacity in KB, amount of disk allocated/used in KB, number of blocks on the disk, the size of each block in KB, the maximum number of directory entries available, and the count of directory entries used.  
+
+This information can be important, as a disk may have a considerable amount of free space but no free directory entries - this can prevent copying files to that disk.  
+
+Another important concept is that the block size will dictate the amount of space a files takes on disk versus actual size because blocks cannot be split between files.  For example, on a disk with 4KB blocks, a one-byte file will take 4KB and a 4097-byte file will consume 8KB of disk space.
 
 ![info](./img/info.png)
+
+Another thing to keep in mind is that files can be spread across several user areas.  In the above screenshot, the listing shows 24 total files, but there are 29 directory entries used.  That indicates that there are an additional 5 files in different user areas.
+
+*NOTE - it takes a few seconds to calculate all of the disk information*
