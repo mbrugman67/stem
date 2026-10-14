@@ -974,8 +974,8 @@ uistat3:
         lxi     d,statln7       ; used dir entries message
         mvi     c,strout        ; print str func
         call    sys             ; print it
-        ;get val
-        ; print val
+        call    cntdirs         ; go count used directory entries
+        call    prn16           ; result was in H/L, print it
         mvi     d,13            ; line 13
         mvi     e,26            ; column 26
         call    setcur          ; put cursor at 13,26
@@ -1235,6 +1235,66 @@ chkdsk3:                        ; multipy block count by block shift count
 chkdsk4:
         shld    dskcap          ; store disk capacity in KB
         ret                     ; return capacity (KB) in H/L
+
+;
+; cntdirs
+; Count directory entries used.  Iterate through all 16
+; user areas on disk and count files.  Ugh.
+; RETURNS:
+;       H/L - total directory entries used (16-bit)
+;
+cntdirs:
+        lxi     h,0             ; zero H/L
+        shld    dircnt          ; store it; zero used directories at this point
+        mvi     c,guser         ; syscall to get/set current User Area
+        mvi     e,0ffh          ; request to get user area
+        call    sys             ; CP/M gimme current user area, result in A
+        sta     srcua           ; save current user area in ram
+        mvi     a,15            ; set A to 15 (max user area)
+        sta     trgtua          ; save that
+cntdir1:                        ; outer outer loop - iterating through user areas
+        mov     e,a             ; drop in E register for syscall
+        mvi     c,guser         ; set user area to current value
+        call    sys             ; syscall
+        lxi     d,schfcb        ; set D/E to search value for find first (src)
+        lxi     h,fcb1          ; set H/L to file control block (dst)
+        lxi     b,fcblen        ; length of one fcb
+        call    memcpy          ; copy search value to FCB1
+        mvi     c,getdsk        ; get currently logged-in disk
+        call    sys             ; syscall
+        inr     a               ; drive A=1, etc.
+        lxi     d,fcb1          ; fcb in D/E for syscall
+        sta     fcb1            ; drive is first byte in FCB:
+        mvi     c,srchf         ; search first file function
+        call    sys             ; call CP/M, result in A
+        cpi     0ffh            ; compare to 0xff - no file found
+        jz      cntdir3         ; no files, go check next user area
+        lhld    dircnt          ; get current directory count
+        inx     h               ; incrment it...
+        shld    dircnt          ; ...and save
+cntdir2:                        ; inner loop - checking for additional files
+        mvi     c,srchn         ; check next file function
+        call    sys             ; syscall
+        cpi     0ffh            ; 0xff means no more files
+        jz      cntdir3         ; if none, go check next UA
+        lhld    dircnt          ; get current directory count
+        inx     h               ; incrment it...
+        shld    dircnt          ; ...and save
+        jmp     cntdir2         ; try for more!
+cntdir3:                        ; check if we have another ua to check
+        lda     trgtua          ; get last scanned user area
+        cpi     0               ; was it zero?
+        jz      cntdrdn         ; then we're done - yay
+        dcr     a               ; not yet, decrement for next scan
+        sta     trgtua          ; save it
+        jmp     cntdir1         ; go scan this user area
+cntdrdn:
+        lda     srcua           ; go retrieve caller's user area
+        mov     e,a             ; drop in E for syscall
+        mvi     c,guser         ; set user area to current value
+        call    sys             ; syscall
+        lhld    dircnt          ; reload final directory entry count
+        ret                     ; and return that to caller in H/L
 
 ;
 ; calcdsk
@@ -2993,7 +3053,8 @@ typlins ds      1               ; line counter for file display
 typcols ds      1               ; column counter for file display
 BSH     ds      1               ; block shift count (for calc'ing disk capacity)
 BCNT    ds      2               ; block count for current disk
-dRM     ds      2               ; max directory entries
+DRM     ds      2               ; max directory entries
+dircnt  ds      2               ; count of directory entries used
 typofst ds      2               ; hex dump offset for file display
 blkcnt  ds      2               ; generic block counter
 dskcap  ds      2               ; disk capacity in KB
