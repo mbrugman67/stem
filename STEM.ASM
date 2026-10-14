@@ -121,9 +121,10 @@ fnlen   equ     11              ; length of 8.3 filename (8+3)
 dspace  equ     16              ; spacing between filenames in list
 dsmax   equ     71              ; when to wrap filename list
 strtrow equ     3               ; first row of file list
-maxfls  equ     70              ; max files in buffer
+maxfls  equ     85              ; max files in buffer
 tagcnt  equ     maxfls/8+1      ; number of tag bytes in array
 uinplen equ     40              ; length of user input buffer
+uiline  equ     22              ; line number for UI stuffs to begin
 
 ;****************************************************
 ; Start of actual program code here
@@ -1002,6 +1003,7 @@ uiexit:
 ; restore original stack pointer, etc.
 ;*************************************************
 cleanup:
+        call    CRLF            ; do a newline to get a fresh line
         lhld    orgstk          ; load original stack pointer to H/L pair
         sphl                    ; set stack pointer from H/L pair
         ret                     ; back to CCP, end of program
@@ -1218,6 +1220,7 @@ chkdsk2:                        ; DPH (Disk Parameter Header) address is in H/L
         inx     h               ; value is max-1, add 1 to get correct value
         shld    DRM             ; save it, 16-bit value for max directory entries
         lda     BSH             ; get shift count
+        lhld    BCNT            ; reload block count into H/L
         mov     b,a             ; save it in B
         cpi     0               ; initial test for zero
 chkdsk3:                        ; multipy block count by block shift count
@@ -2522,6 +2525,10 @@ first:
         lxi     h,fcb1          ; set H/L to file control block (dst)
         lxi     b,fcblen        ; length of one fcb
         call    memcpy          ; copy search value to FCB1
+        lxi     d,sfilter       ; get the filter
+        lxi     h,fcb1+1        ; start of filename part of FCB
+        lxi     b,fnlen         ; length of filename (length of filter, too)
+        call    memcpy          ; copy that in
         mvi     c,getdsk        ; get currently logged-in disk
         call    sys             ; syscall
         inr     a               ; drive A=1, etc.
@@ -2818,18 +2825,27 @@ prnui:
         lxi     d,fndstr3       ; ' tagged files' message
         mvi     c,strout        ; print string
         call    sys             ; print it
-        mvi     d,20            ; go to line 20
+        mvi     d,uiline        ; go to line for top UI
         mvi     e,1             ; column 1
         call    rstline         ; clear line
         lxi     d,uistr1        ; "Current file..." message
         mvi     c,strout        ; string out syscall
         call    sys             ; make the syscall
-        mvi     d,21            ; go to line 21
+        mvi     d,uiline+1      ; go to second UI line
         mvi     e,1             ; column 1
         call    rstline         ; clear line
         lxi     d,uistr2        ; second UI line
         mvi     c,strout        ; print string
         call    sys             ; let cpm print it
+        mvi     d,uiline+2      ; third UI line
+        mvi     e,1             ; first column
+        call    setcur          ; put cursor there
+        lxi     d,uistr3        ; 'filter' line
+        mvi     c,strout        ; print func
+        call    sys             ; syscall
+        lxi     d,sfilter       ; actual current filter
+        mvi     c,strout        ; print func
+        call    sys             ; syscall
         pop     h               ;
         pop     d               ;
         pop     b               ;
@@ -2870,13 +2886,13 @@ prnui2:
         lxi     d,fndstr4       ; "tagged"... message
         mvi     c,strout        ; print string
         call    sys             ; syscall
-        mvi     d,20            ; line 20
+        mvi     d,uiline        ; go to first UI line
         mvi     e,32            ; column 32 (just after selection tools)
         call    setcur          ; put cursor there
         lxi     d,uiclnln       ; clear from here to end of line
         mvi     c,strout        ; send to terminal
         call    sys             ; syscall to do that
-        mvi     d,20            ; line 20
+        mvi     d,uiline        ; go to first UI line
         mvi     e,32            ; column 32 (just after selection tools)
         call    setcur          ; put cursor there
         lxi     d,uibold        ; set bold font
@@ -2895,13 +2911,13 @@ prnui4:
         lxi     d,uireset       ; clear formatting
         mvi     c,strout        ; print
         call    sys             ; print it
-        mvi     d,21            ; line 21
+        mvi     d,uiline+1      ; go to second UI line
         mvi     e,35            ; column 35 (this will clear previous command entry)
         call    setcur          ; put cursor there
         lxi     d,uiclnln       ; sequence to clear to end of line
         mvi     c,strout        ; send to terminal
         call    sys             ; syscall
-        mvi     d,21            ; line 21
+        mvi     d,uiline+1      ; go to second UI line
         mvi     e,36            ; column 36 (location for command entry)
         call    setcur          ; put cursor there
         pop     h               ;
@@ -2918,7 +2934,7 @@ errcan  db      'ERROR - Stack is corrupt!',CR,LF,'$'
 flowr1  db      ' +--------------------------------------------------+ $'
 flowr2  db      ' |                                                  | $'
 stemver db      'STEM $'
-vernum  db      '(v0.9.8)$'
+vernum  db      '(v0.9.9)$'
 welcom1 db      'An Altair 8800 File Manager$'
 welcom2 db      '2026 Mattydyne Heavy Industries$'
 welcom3 db      01bh,'[1m"H" for help, any other key to start',01bh,'[0m',CR,LF,'$'
@@ -2934,7 +2950,8 @@ uirevrs db      01bh,'[7m$'
 uireset db      01bh,'[0m$'
 uiclnln db      '                                  $'
 uistr1  db      'Selected file (N/P/U/<Space>): $'
-uistr2  db      'Command (D/C/T/R/M/L/I/X, H-help)? $'
+uistr2  db      'Command (D/C/T/R/M/L/I/F/X, H-help)? $'
+uistr3  db      'Current file search filter: $'
 delser  db      'Tag one or more files for deletion!$'
 cpyser  db      '   Tag one or more files to copy!$'
 renser  db      '  Tag one or more files to rename!$'
@@ -2974,7 +2991,8 @@ statln5 db      'KB/Block: $'
 statln6 db      'Max dir entries: $'
 statln7 db      'Used dir entries: $'
 statkb  db      ' KBytes$'
-schfcb  db      0,'???????????',0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0
+sfilter db      '???????????$'
+schfcb  db      0,'           ',0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0
 blnkfcb db      0,'           ',0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0
 mworkng db      'Enumerating files in drive $'
 helpttl db      '     STEM - a basic file manager for CP/M 2.2 on Altair 8800',CR,LF,CR,LF,'$'
@@ -3011,7 +3029,8 @@ hlpcmds db      '+ Commands:',CR,LF,CR,LF
         db      '    prompted for a new name for each file.',CR,LF
         db      '  + M - this will copy all tagged files to another user area',CR,LF
         db      '  + L - "log into" a new disk and show files on that disk',CR,LF
-        db      '  + I - display drive info - capacity, usage, geometry',CR,LF,CR,LF,'$'
+        db      '  + I - display drive info - capacity, usage, geometry',CR,LF
+        db      '  + F - change file search filter',CR,LF,CR,LF,'$'
 hlpshrt db      ' Short command help:',CR,LF
         db      ' D - delete one or more files',CR,LF
         db      ' C - copy one or more files',CR,LF
@@ -3020,6 +3039,7 @@ hlpshrt db      ' Short command help:',CR,LF
         db      ' M - copy file to another user area',CR,LF
         db      ' L - change disk drive',CR,LF
         db      ' I - display drive info',CR,LF
+        db      ' F - set file search filter',CR,LF
         db      ' X - Exit the program',CR,LF,CR,LF
         db      ' Short navigation help:',CR,LF
         db      ' N - select next file (wraps around end to beginning)',CR,LF

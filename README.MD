@@ -18,7 +18,7 @@ The program name is `STEM` because CP/M doesn't have subdirectories, so anything
 + File display; the program will try to determine if the file content is ASCII or binary.  If it is ASCII, it will be displayed as pages of text, if binary it will be displayed as pages of hexdump
 
 ### Known issues and limitations
-+ Program will load a maximum of 70 files per drive
++ Program will load a maximum of 85 files per drive
 + ASCII/Text display pager makes some assumptions about what will fit on a screen.  Screen is assumed to be 80 columns by 24 lines
 
 ### TODO
@@ -110,7 +110,7 @@ The program divides the screen into 3 sections:
   + `User Area 0` tells us that these are the files in CP/M user area 0.  CP/M 2.2 doesn't support directories/subdirectories, but CP/M 2.2 introduced "User Areas".  Basically, files can be logically divided into distinct User Areas from 0 to 15.  See CP/M documentation/online for detailed information. (`STEM` makes copying files between user areas a bit easier!)
   + `(total of 48 files, 0 files tagged)` - in this case, the program found 48 files in drive `A:`, user area 0.  No files are currently tagged; more on file tagging below.
 
-+ The middle section shows the actual file listing.  Files are listed in 5 columns, each filename preceded by a placeholder to show tag status:  untagged files have an empty place holder (`[ ]`), tagged files are shown with a capital x (`[X]`).  *There is currently a limitation that only the first 70 files will be listed.*
++ The middle section shows the actual file listing.  Files are listed in 5 columns, each filename preceded by a placeholder to show tag status:  untagged files have an empty place holder (`[ ]`), tagged files are shown with a capital x (`[X]`).  *There is currently a limitation that only the first 85 files will be listed.*
 
 + The bottom section consists of 2 lines
   + The first line shows the currently selected file in **BOLD** if your terminal supports it.  
