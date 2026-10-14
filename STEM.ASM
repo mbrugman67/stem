@@ -155,6 +155,9 @@ uinplen equ     40              ; length of user input buffer
         mvi     c,strout        ; print string func
         lxi     d,stemver       ; version string
         call    sys             ; print it
+        lxi     d,vernum        ; get version number
+        mvi     c,strout        ; print func
+        call    sys             ; syscall
         mvi     d,8             ; line 8
         mvi     e,27            ; column 27
         call    setcur          ; move cursor
@@ -882,8 +885,20 @@ uistats:
         jnz     uiexit          ; nope, go to exit
         mvi     d,5             ; line 5
         mvi     e,16            ; column 16
-        mvi     a,6             ; 5 blank lines
+        mvi     a,9             ; 8 blank lines
         call    flower          ; draw a flower box
+        mvi     d,13            ; line 13
+        mvi     e,36            ; column 36
+        call    setcur          ; put cursor at 13,36
+        lxi     d,uibold        ; set bold
+        mvi     c,strout        ; send it to term
+        call    sys             ; syscall
+        lxi     d,calcing       ; 'calculating...` message
+        mvi     c,strout        ; print func
+        call    sys             ; syscall
+        lxi     d,uireset       ; clear bold attribute
+        mvi     c,strout        ; send it out
+        call    sys             ; syscall
         mvi     d,6             ; line 6
         mvi     e,30            ; column 30
         call    setcur          ; cursor move
@@ -945,6 +960,34 @@ uistat2:
 uistat3:
         mov     l,a             ; put into L for next call
         call    prn8            ; print it
+        mvi     d,11            ; line 11
+        mvi     e,24            ; column 24
+        call    setcur          ; put cursor at 11,24
+        lxi     d,statln6       ; max dir entries message
+        mvi     c,strout        ; print str func
+        call    sys             ; print it
+        lhld    DRM             ; get max dir entries
+        call    prn16           ; and print it
+        mvi     d,12            ; line 12
+        mvi     e,23            ; column 23
+        call    setcur          ; put cursor at 12,23
+        lxi     d,statln7       ; used dir entries message
+        mvi     c,strout        ; print str func
+        call    sys             ; print it
+        ;get val
+        ; print val
+        mvi     d,13            ; line 13
+        mvi     e,26            ; column 26
+        call    setcur          ; put cursor at 13,26
+        lxi     d,uibold        ; bold text
+        mvi     c,strout        ; make it so
+        call    sys             ; syscall
+        lxi     d,contmsg       ; press any key text
+        mvi     c,strout        ; print func
+        call    sys             ; syscall
+        lxi     d,uireset       ; clear bold attribute
+        mvi     c,strout        ; print
+        call    sys             ; syscall
         call    cin2uppr        ; wait for input
         jmp     usrlp0          ; go back for complete redraw
 
@@ -1057,6 +1100,14 @@ help:
         lxi     d,helpttl       ; help title
         mvi     c,strout        ; display string
         call    sys             ; syscall
+        lxi     d,helpver       ; version
+        mvi     c,strout        ; print
+        call    sys             ; syscall
+        lxi     d,vernum        ; actual version number
+        mvi     c,strout        ; print it
+        call    sys             ; syscall
+        call    CRLF            ; newline
+        call    CRLF            ; newline again
         lxi     d,hlpshrt       ; short help message
         mvi     c,strout        ; display string
         call    sys             ; display
@@ -1158,6 +1209,14 @@ chkdsk2:                        ; DPH (Disk Parameter Header) address is in H/L
         lxi     b,-1            ; decrement by
         dad     b               ; one
         shld    BCNT            ; save block count
+        inx     d               ; next byte is low byte of directory entries
+        ldax    d               ; get it
+        mov     l,a             ; save it
+        inx     d               ; high count of directory entries
+        ldax    d               ; get it
+        mov     h,a             ; high byte of max dir entries
+        inx     h               ; value is max-1, add 1 to get correct value
+        shld    DRM             ; save it, 16-bit value for max directory entries
         lda     BSH             ; get shift count
         mov     b,a             ; save it in B
         cpi     0               ; initial test for zero
@@ -2763,7 +2822,16 @@ prnui2:
         lxi     d,uibold        ; set bold font
         mvi     c,strout        ; print
         call    sys             ; print it
+        lda     fcount          ; get file count
+        cpi     0               ; are there any files?
+        jnz     prnui3          ; files exist, print filename
+        lxi     d,uiclnln       ; get blanks
+        mvi     c,strout        ; print blanks
+        call    sys             ; syscall
+        jmp     prnui4          ; skip print filename (there aren't any)
+prnui3:
         call    prnname         ; print selected filename
+prnui4:
         lxi     d,uireset       ; clear formatting
         mvi     c,strout        ; print
         call    sys             ; print it
@@ -2789,7 +2857,8 @@ canary  db      0beh,0efh,0cah,0feh
 errcan  db      'ERROR - Stack is corrupt!',CR,LF,'$'
 flowr1  db      ' +--------------------------------------------------+ $'
 flowr2  db      ' |                                                  | $'
-stemver db      'STEM v0.9.7$'
+stemver db      'STEM $'
+vernum  db      '(v0.9.8)$'
 welcom1 db      'An Altair 8800 File Manager$'
 welcom2 db      '2026 Mattydyne Heavy Industries$'
 welcom3 db      01bh,'[1m"H" for help, any other key to start',01bh,'[0m',CR,LF,'$'
@@ -2836,16 +2905,20 @@ uichyna db      ' (Y/N/A)? $'
 logmsg  db      'Select new disk letter: $'
 usrcmsg db      'Select new user area (0-15): $'
 mvuamsg db      'Select target user area (0-15): $'
+calcing db      'Calculating...$'
 statln1 db      'Information for drive X:$'
 statln2 db      'Capacity: $'
 statln3 db      'Used: $'
-statln4 db      'BLocks: $'
+statln4 db      'Blocks: $'
 statln5 db      'KB/Block: $'
+statln6 db      'Max dir entries: $'
+statln7 db      'Used dir entries: $'
 statkb  db      ' KBytes$'
 schfcb  db      0,'???????????',0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0
 blnkfcb db      0,'           ',0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0
 mworkng db      'Enumerating files in drive $'
 helpttl db      '     STEM - a basic file manager for CP/M 2.2 on Altair 8800',CR,LF,CR,LF,'$'
+helpver db      '                        Version $'
 hlpusng db      'When started, the screen is divided into 3 horizontal sections:',CR,LF
         db      '+ Top line - this shows which drive is currently being read,',CR,LF
         db      '  how many files are on the drive, and how many are tagged.',CR,LF
@@ -2920,6 +2993,7 @@ typlins ds      1               ; line counter for file display
 typcols ds      1               ; column counter for file display
 BSH     ds      1               ; block shift count (for calc'ing disk capacity)
 BCNT    ds      2               ; block count for current disk
+dRM     ds      2               ; max directory entries
 typofst ds      2               ; hex dump offset for file display
 blkcnt  ds      2               ; generic block counter
 dskcap  ds      2               ; disk capacity in KB
