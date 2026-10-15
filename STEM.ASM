@@ -880,17 +880,18 @@ uilog2:
         call    perr            ; display it
         jmp     usrlp0          ; go back and re-read current disk
 
-        ; Print disk statistics
+        ; Print disk statistics.  Some of this info was gathered earlier
+        ; when the current disk was selected, some is updated here
 uistats:
         cpi     'I'             ; User wants disk info
         jnz     uiexit          ; nope, go to exit
         mvi     d,5             ; line 5
         mvi     e,16            ; column 16
-        mvi     a,9             ; 8 blank lines
+        mvi     a,10            ; 9 blank lines
         call    flower          ; draw a flower box
         mvi     d,13            ; line 13
         mvi     e,36            ; column 36
-        call    setcur          ; put cursor at 13,36
+        call    setcur          ; put cursor at 14,36
         lxi     d,uibold        ; set bold
         mvi     c,strout        ; send it to term
         call    sys             ; syscall
@@ -900,20 +901,26 @@ uistats:
         lxi     d,uireset       ; clear bold attribute
         mvi     c,strout        ; send it out
         call    sys             ; syscall
-        mvi     d,6             ; line 6
-        mvi     e,30            ; column 30
+        mvi     d,5             ; line 5 - will be in top border
+        mvi     e,28            ; column 28
         call    setcur          ; cursor move
+        lxi     d,uibold        ; set bold attribute
+        mvi     c,strout        ; send to terminal
+        call    sys             ; do the syscall
         lxi     d,statln1       ; header
         mvi     c,strout        ; print string
         call    sys             ; syscall
-        mvi     d,6             ; still on line 6
-        mvi     e,52            ; replace "X" with drive letter
+        mvi     d,5             ; still on line 5
+        mvi     e,50            ; replace "X" with drive letter
         call    setcur          ; put curser in spot
         mvi     c,getdsk        ; get current drive
         call    sys             ; get drive number into A
         adi     'A'             ; offset into ASCII
         call    pchar           ; print drive letter
-        mvi     d,7             ; now line 7
+        lxi     d,uireset       ; reset bold attr
+        mvi     c,strout        ; send to terminal
+        call    sys             ; print string
+        mvi     d,6             ; now line 6
         mvi     e,31            ; column 31
         call    setcur          ; put cursor there
         lxi     d,statln2       ; 'capacity' message
@@ -924,7 +931,7 @@ uistats:
         lxi     d,statkb        ; append that with 'KBytes'
         mvi     c,strout        ; print string
         call    sys             ; syscall
-        mvi     d,8             ; line 8
+        mvi     d,7             ; line 7
         mvi     e,35            ; column 35
         call    setcur          ; move cursor there
         lxi     d,statln3       ; 'usage' message
@@ -935,7 +942,7 @@ uistats:
         lxi     d,statkb        ; append that with 'KBytes'
         mvi     c,strout        ; print string
         call    sys             ; syscall
-        mvi     d,9             ; line 9
+        mvi     d,8             ; line 8
         mvi     e,33            ; column 33
         call    setcur          ; put cursor there
         lxi     d,statln4       ; block count message
@@ -943,7 +950,7 @@ uistats:
         call    sys             ; syscall
         lhld    BCNT            ; get block count
         call    prn16           ; print that
-        mvi     d,10            ; line 10
+        mvi     d,9             ; line 9
         mvi     e,31            ; column 31
         call    setcur          ; position cursor
         lxi     d,statln5       ; kb/block message
@@ -961,17 +968,17 @@ uistat2:
 uistat3:
         mov     l,a             ; put into L for next call
         call    prn8            ; print it
-        mvi     d,11            ; line 11
+        mvi     d,10            ; line 10
         mvi     e,24            ; column 24
-        call    setcur          ; put cursor at 11,24
+        call    setcur          ; put cursor at 10,24
         lxi     d,statln6       ; max dir entries message
         mvi     c,strout        ; print str func
         call    sys             ; print it
         lhld    DRM             ; get max dir entries
         call    prn16           ; and print it
-        mvi     d,12            ; line 12
+        mvi     d,11            ; line 11
         mvi     e,23            ; column 23
-        call    setcur          ; put cursor at 12,23
+        call    setcur          ; put cursor at 11,23
         lxi     d,statln7       ; used dir entries message
         mvi     c,strout        ; print str func
         call    sys             ; print it
@@ -2726,6 +2733,34 @@ prnnm4:
         ret
 
 ;
+; prnfltr
+; print current file search filter in
+; the format NNNNNNNN.TTT
+; Will print at the current location
+;
+prnfltr:
+        lxi     h,sfilter       ; point to file search filter
+        mvi     b,8             ; set B to 8 characters
+pflt1:                          ; print out the "name" part
+        mov     a,m             ; get current char
+        call    pchar           ; print it
+        inx     h               ; next char
+        dcr     b               ; decrement count, sets Z flag
+        jnz     pflt1           ; next char
+        mvi     a,'.'           ; separator
+        call    pchar           ; print
+        mvi     b,3             ; 3 chars in ext/type
+pflt2:                          ; print out the type/extension
+        mov     a,m             ; get current
+        call    pchar           ; print it
+        inx     h               ; next char
+        dcr     b               ; decrement count, sets Z flag
+        jnz     pflt2           ; keep 'er moving
+        ret                     ;
+
+
+
+;
 ; fndisp
 ; Formatted display of filenames.  5 columns of names,
 ; each with a preceding "[ ]" which will be used to hold
@@ -2843,9 +2878,7 @@ prnui:
         lxi     d,uistr3        ; 'filter' line
         mvi     c,strout        ; print func
         call    sys             ; syscall
-        lxi     d,sfilter       ; actual current filter
-        mvi     c,strout        ; print func
-        call    sys             ; syscall
+        call    prnfltr         ; print current search filter
         pop     h               ;
         pop     d               ;
         pop     b               ;
@@ -2983,7 +3016,7 @@ logmsg  db      'Select new disk letter: $'
 usrcmsg db      'Select new user area (0-15): $'
 mvuamsg db      'Select target user area (0-15): $'
 calcing db      'Calculating...$'
-statln1 db      'Information for drive X:$'
+statln1 db      '[ Information for drive X: ]$'
 statln2 db      'Capacity: $'
 statln3 db      'Used: $'
 statln4 db      'Blocks: $'
@@ -2991,8 +3024,8 @@ statln5 db      'KB/Block: $'
 statln6 db      'Max dir entries: $'
 statln7 db      'Used dir entries: $'
 statkb  db      ' KBytes$'
-sfilter db      '???????????$'
-schfcb  db      0,'           ',0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0
+sfilter db      '???????????'
+schfcb  db      0,'???????????',0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0
 blnkfcb db      0,'           ',0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0
 mworkng db      'Enumerating files in drive $'
 helpttl db      '     STEM - a basic file manager for CP/M 2.2 on Altair 8800',CR,LF,CR,LF,'$'
