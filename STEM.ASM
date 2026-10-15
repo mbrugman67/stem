@@ -298,6 +298,18 @@ usr2:
         mvi     e,16            ; column 16
         mvi     a,4             ; 3 blank lines
         call    flower          ; draw a flower box
+        mvi     d,5             ; title bar for box
+        mvi     e,29            ; column 29
+        call    setcur          ; put cursor on title
+        lxi     d,uibold        ; bold attribute
+        mvi     c,strout        ; send to terminal
+        call    sys             ; syscall
+        lxi     d,uatitle       ; title
+        mvi     c,strout        ; print func
+        call    sys             ; syscall
+        lxi     d,uireset       ; clear bold
+        mvi     c,strout        ; send to terminal
+        call    sys             ; syscall
         mvi     d,7             ; line 7
         mvi     e,24            ; column 24
         call    setcur          ; put cursor there
@@ -340,6 +352,18 @@ delbox:
         mvi     e,16            ; column 16
         mvi     a,4             ; 3 blank lines
         call    flower          ; draw a flower box
+        mvi     d,5             ; title bar for box
+        mvi     e,33            ; column 33
+        call    setcur          ; put cursor on title
+        lxi     d,uibold        ; bold attribute
+        mvi     c,strout        ; send to terminal
+        call    sys             ; syscall
+        lxi     d,dltitle       ; title
+        mvi     c,strout        ; print func
+        call    sys             ; syscall
+        lxi     d,uireset       ; clear bold
+        mvi     c,strout        ; send to terminal
+        call    sys             ; syscall
         mvi     d,7             ; line 7
         mvi     e,26            ; column 26
         call    setcur          ; put cursor there
@@ -395,6 +419,18 @@ cpybox:
         mvi     e,16            ; column 16
         mvi     a,4             ; 3 blank lines
         call    flower          ; draw a flower box
+        mvi     d,5             ; title bar for box
+        mvi     e,35            ; column 35
+        call    setcur          ; put cursor on title
+        lxi     d,uibold        ; bold attribute
+        mvi     c,strout        ; send to terminal
+        call    sys             ; syscall
+        lxi     d,cptitle       ; title
+        mvi     c,strout        ; print func
+        call    sys             ; syscall
+        lxi     d,uireset       ; clear bold
+        mvi     c,strout        ; send to terminal
+        call    sys             ; syscall
         mvi     d,7             ; line 7
         mvi     e,26            ; column 26
         call    setcur          ; put cursor there
@@ -502,6 +538,18 @@ typbox:
         mvi     e,16            ; column 16
         mvi     a,4             ; 3 blank lines
         call    flower          ; draw a flower box
+        mvi     d,5             ; title bar for box
+        mvi     e,33            ; column 33
+        call    setcur          ; put cursor on title
+        lxi     d,uibold        ; bold attribute
+        mvi     c,strout        ; send to terminal
+        call    sys             ; syscall
+        lxi     d,tptitle       ; title
+        mvi     c,strout        ; print func
+        call    sys             ; syscall
+        lxi     d,uireset       ; clear bold
+        mvi     c,strout        ; send to terminal
+        call    sys             ; syscall
         mvi     d,7             ; line 7
         mvi     e,26            ; column 26
         call    setcur          ; put cursor there
@@ -664,6 +712,18 @@ renbox:
         mvi     e,16            ; column 16
         mvi     a,4             ; 3 blank lines
         call    flower          ; draw a flower box
+        mvi     d,5             ; title bar for box
+        mvi     e,33            ; column 33
+        call    setcur          ; put cursor on title
+        lxi     d,uibold        ; bold attribute
+        mvi     c,strout        ; send to terminal
+        call    sys             ; syscall
+        lxi     d,rntitle       ; title
+        mvi     c,strout        ; print func
+        call    sys             ; syscall
+        lxi     d,uireset       ; clear bold
+        mvi     c,strout        ; send to terminal
+        call    sys             ; syscall
         mvi     d,7             ; line 7
         mvi     e,26            ; column 26
         call    setcur          ; put cursor there
@@ -744,7 +804,8 @@ renfl:
         call    perr            ; display error message
         jmp     ren1            ; go try again
 
-mvua:                           ; move a file to another user area
+        ; copy a file to another user area
+mvua:                           ; copy a file to another user area
         cpi     'M'             ; User wants to move?
         jnz     uihelp          ; nope, go to help
         call    cnttags         ; get count of tagged files
@@ -758,6 +819,18 @@ mvua1:                          ; get target user area
         mvi     e,16            ; column 16
         mvi     a,4             ; 3 blank lines
         call    flower          ; draw a flower box
+        mvi     d,5             ; title bar for box
+        mvi     e,27            ; column 27
+        call    setcur          ; put cursor on title
+        lxi     d,uibold        ; bold attribute
+        mvi     c,strout        ; send to terminal
+        call    sys             ; syscall
+        lxi     d,mvtitle       ; title
+        mvi     c,strout        ; print func
+        call    sys             ; syscall
+        lxi     d,uireset       ; clear bold
+        mvi     c,strout        ; send to terminal
+        call    sys             ; syscall
         mvi     d,7             ; line 7
         mvi     e,24            ; column 24
         call    setcur          ; put cursor there
@@ -845,6 +918,18 @@ uilog1:
         mvi     e,16            ; column 16
         mvi     a,4             ; 3 blank lines
         call    flower          ; draw a flower box
+        mvi     d,5             ; title bar for box
+        mvi     e,33            ; column 33
+        call    setcur          ; put cursor on title
+        lxi     d,uibold        ; bold attribute
+        mvi     c,strout        ; send to terminal
+        call    sys             ; syscall
+        lxi     d,cdtitle       ; title
+        mvi     c,strout        ; print func
+        call    sys             ; syscall
+        lxi     d,uireset       ; clear bold
+        mvi     c,strout        ; send to terminal
+        call    sys             ; syscall
         mvi     d,7             ; line 7
         mvi     e,26            ; column 26
         call    setcur          ; put cursor there
@@ -884,12 +969,12 @@ uilog2:
         ; when the current disk was selected, some is updated here
 uistats:
         cpi     'I'             ; User wants disk info
-        jnz     uiexit          ; nope, go to exit
+        jnz     uifltr          ; nope, go to set search filter
         mvi     d,5             ; line 5
         mvi     e,16            ; column 16
         mvi     a,10            ; 9 blank lines
         call    flower          ; draw a flower box
-        mvi     d,13            ; line 13
+        mvi     d,14            ; line 14
         mvi     e,36            ; column 36
         call    setcur          ; put cursor at 14,36
         lxi     d,uibold        ; set bold
@@ -911,7 +996,7 @@ uistats:
         mvi     c,strout        ; print string
         call    sys             ; syscall
         mvi     d,5             ; still on line 5
-        mvi     e,50            ; replace "X" with drive letter
+        mvi     e,52            ; replace "X" with drive letter
         call    setcur          ; put curser in spot
         mvi     c,getdsk        ; get current drive
         call    sys             ; get drive number into A
@@ -920,7 +1005,7 @@ uistats:
         lxi     d,uireset       ; reset bold attr
         mvi     c,strout        ; send to terminal
         call    sys             ; print string
-        mvi     d,6             ; now line 6
+        mvi     d,7             ; now line 7
         mvi     e,31            ; column 31
         call    setcur          ; put cursor there
         lxi     d,statln2       ; 'capacity' message
@@ -931,7 +1016,7 @@ uistats:
         lxi     d,statkb        ; append that with 'KBytes'
         mvi     c,strout        ; print string
         call    sys             ; syscall
-        mvi     d,7             ; line 7
+        mvi     d,8             ; line 8
         mvi     e,35            ; column 35
         call    setcur          ; move cursor there
         lxi     d,statln3       ; 'usage' message
@@ -942,7 +1027,7 @@ uistats:
         lxi     d,statkb        ; append that with 'KBytes'
         mvi     c,strout        ; print string
         call    sys             ; syscall
-        mvi     d,8             ; line 8
+        mvi     d,9             ; line 9
         mvi     e,33            ; column 33
         call    setcur          ; put cursor there
         lxi     d,statln4       ; block count message
@@ -950,7 +1035,7 @@ uistats:
         call    sys             ; syscall
         lhld    BCNT            ; get block count
         call    prn16           ; print that
-        mvi     d,9             ; line 9
+        mvi     d,10            ; line 10
         mvi     e,31            ; column 31
         call    setcur          ; position cursor
         lxi     d,statln5       ; kb/block message
@@ -968,15 +1053,15 @@ uistat2:
 uistat3:
         mov     l,a             ; put into L for next call
         call    prn8            ; print it
-        mvi     d,10            ; line 10
+        mvi     d,11            ; line 11
         mvi     e,24            ; column 24
-        call    setcur          ; put cursor at 10,24
+        call    setcur          ; put cursor at 11,24
         lxi     d,statln6       ; max dir entries message
         mvi     c,strout        ; print str func
         call    sys             ; print it
         lhld    DRM             ; get max dir entries
         call    prn16           ; and print it
-        mvi     d,11            ; line 11
+        mvi     d,12            ; line 12
         mvi     e,23            ; column 23
         call    setcur          ; put cursor at 11,23
         lxi     d,statln7       ; used dir entries message
@@ -984,9 +1069,9 @@ uistat3:
         call    sys             ; print it
         call    cntdirs         ; go count used directory entries
         call    prn16           ; result was in H/L, print it
-        mvi     d,13            ; line 13
-        mvi     e,26            ; column 26
-        call    setcur          ; put cursor at 13,26
+        mvi     d,14            ; line 14
+        mvi     e,29            ; column 29
+        call    setcur          ; put cursor at 14,29
         lxi     d,uibold        ; bold text
         mvi     c,strout        ; make it so
         call    sys             ; syscall
@@ -998,6 +1083,43 @@ uistat3:
         call    sys             ; syscall
         call    cin2uppr        ; wait for input
         jmp     usrlp0          ; go back for complete redraw
+
+        ; set file search filter
+uifltr:
+        cpi     'F'             ; User wants disk info
+        jnz     uiexit          ; nope, go to exit
+        mvi     d,5             ; line 5
+        mvi     e,16            ; column 16
+        mvi     a,4             ; 3 blank lines
+        call    flower          ; draw a flower box
+        mvi     d,5             ; title bar for box
+        mvi     e,31            ; column 31
+        call    setcur          ; put cursor on title
+        lxi     d,uibold        ; bold attribute
+        mvi     c,strout        ; send to terminal
+        call    sys             ; syscall
+        lxi     d,sftitle       ; title
+        mvi     c,strout        ; print func
+        call    sys             ; syscall
+        lxi     d,uireset       ; clear bold
+        mvi     c,strout        ; send to terminal
+        call    sys             ; syscall
+        mvi     d,7             ; line 7
+        mvi     e,27            ; column 27
+        call    setcur          ; put cursor there
+        lxi     d,setflt1       ; 'current filter' msg
+        mvi     c,strout        ; print string
+        call    sys             ; syscall
+        call    prnfltr         ; print current filter
+        mvi     d,8             ; next line
+        mvi     e,31            ; column 31
+        call    setcur          ; put cursor there
+        lxi     d,setflt2       ; 'new filter' msg
+        mvi     c,strout        ; print
+        call    sys             ; syscall
+        call    getfltr         ; get new filter from user
+        jmp     usrlp0          ; complete reload/redraw
+
 
         ; go back to CP/M.
 uiexit:
@@ -1509,6 +1631,16 @@ ginpok:                         ; return with success
         lxi     d,fcb2          ; good return with D pointing to our FCB
 ginpret:
         ret                     ;
+
+;
+; getfltr
+; Get file search filter from user
+;
+getfltr:
+
+        call    cin2uppr        ;
+        ret                     ;
+
 
 ;
 ; cpyfile
@@ -3016,6 +3148,14 @@ logmsg  db      'Select new disk letter: $'
 usrcmsg db      'Select new user area (0-15): $'
 mvuamsg db      'Select target user area (0-15): $'
 calcing db      'Calculating...$'
+uatitle db      '[ Switch User Area ]$'
+dltitle db      '[ Delete File ]$'
+cptitle db      '[ Copy File ]$'
+tptitle db      '[ Display File ]$'
+rntitle db      '[ Rename File ]$'
+mvtitle db      '[ Copy File to User Area ]$'
+cdtitle db      '[ Switch Drive ]$'
+sftitle db      '[ Set Search Filter ]$'
 statln1 db      '[ Information for drive X: ]$'
 statln2 db      'Capacity: $'
 statln3 db      'Used: $'
@@ -3024,6 +3164,8 @@ statln5 db      'KB/Block: $'
 statln6 db      'Max dir entries: $'
 statln7 db      'Used dir entries: $'
 statkb  db      ' KBytes$'
+setflt1 db      'Current filter: $'
+setflt2 db      'New filter: $'
 sfilter db      '???????????'
 schfcb  db      0,'???????????',0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0
 blnkfcb db      0,'           ',0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0
