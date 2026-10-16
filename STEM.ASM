@@ -146,6 +146,7 @@ uiline  equ     22              ; line number for UI stuffs to begin
         call    chkdsk          ; initial call to get stats for starting disk
 
         ; Draw the "Welcome" header over whatever is on the screen
+        lxi     h,0             ; no title for this
         mvi     d,5             ; flower box at line 5
         mvi     e,16            ; flower box at column 16
         mvi     a,8             ; 7 blank lines in box
@@ -297,19 +298,8 @@ usr2:
         mvi     d,5             ; line 5
         mvi     e,16            ; column 16
         mvi     a,4             ; 3 blank lines
+        lxi     h,uatitle       ; point to string for title
         call    flower          ; draw a flower box
-        mvi     d,5             ; title bar for box
-        mvi     e,29            ; column 29
-        call    setcur          ; put cursor on title
-        lxi     d,uibold        ; bold attribute
-        mvi     c,strout        ; send to terminal
-        call    sys             ; syscall
-        lxi     d,uatitle       ; title
-        mvi     c,strout        ; print func
-        call    sys             ; syscall
-        lxi     d,uireset       ; clear bold
-        mvi     c,strout        ; send to terminal
-        call    sys             ; syscall
         mvi     d,7             ; line 7
         mvi     e,24            ; column 24
         call    setcur          ; put cursor there
@@ -351,19 +341,8 @@ delbox:
         mvi     d,5             ; line 5
         mvi     e,16            ; column 16
         mvi     a,4             ; 3 blank lines
+        lxi     h,dltitle       ; title for flower box
         call    flower          ; draw a flower box
-        mvi     d,5             ; title bar for box
-        mvi     e,33            ; column 33
-        call    setcur          ; put cursor on title
-        lxi     d,uibold        ; bold attribute
-        mvi     c,strout        ; send to terminal
-        call    sys             ; syscall
-        lxi     d,dltitle       ; title
-        mvi     c,strout        ; print func
-        call    sys             ; syscall
-        lxi     d,uireset       ; clear bold
-        mvi     c,strout        ; send to terminal
-        call    sys             ; syscall
         mvi     d,7             ; line 7
         mvi     e,26            ; column 26
         call    setcur          ; put cursor there
@@ -418,19 +397,8 @@ cpybox:
         mvi     d,5             ; line 5
         mvi     e,16            ; column 16
         mvi     a,4             ; 3 blank lines
+        lxi     h,cptitle       ; title for box
         call    flower          ; draw a flower box
-        mvi     d,5             ; title bar for box
-        mvi     e,35            ; column 35
-        call    setcur          ; put cursor on title
-        lxi     d,uibold        ; bold attribute
-        mvi     c,strout        ; send to terminal
-        call    sys             ; syscall
-        lxi     d,cptitle       ; title
-        mvi     c,strout        ; print func
-        call    sys             ; syscall
-        lxi     d,uireset       ; clear bold
-        mvi     c,strout        ; send to terminal
-        call    sys             ; syscall
         mvi     d,7             ; line 7
         mvi     e,26            ; column 26
         call    setcur          ; put cursor there
@@ -457,6 +425,7 @@ cpy2:
         mvi     d,5             ; line 5
         mvi     e,16            ; column 16
         mvi     a,6             ; 5 blank lines
+        lxi     h,0             ; no title for this box
         call    flower          ; draw a flower box
         mvi     d,7             ; line 7
         mvi     e,29            ; column 29
@@ -537,19 +506,8 @@ typbox:
         mvi     d,5             ; line 5
         mvi     e,16            ; column 16
         mvi     a,4             ; 3 blank lines
+        lxi     h,tptitle       ; point to title for this flower box
         call    flower          ; draw a flower box
-        mvi     d,5             ; title bar for box
-        mvi     e,33            ; column 33
-        call    setcur          ; put cursor on title
-        lxi     d,uibold        ; bold attribute
-        mvi     c,strout        ; send to terminal
-        call    sys             ; syscall
-        lxi     d,tptitle       ; title
-        mvi     c,strout        ; print func
-        call    sys             ; syscall
-        lxi     d,uireset       ; clear bold
-        mvi     c,strout        ; send to terminal
-        call    sys             ; syscall
         mvi     d,7             ; line 7
         mvi     e,26            ; column 26
         call    setcur          ; put cursor there
@@ -711,19 +669,8 @@ renbox:
         mvi     d,5             ; line 5
         mvi     e,16            ; column 16
         mvi     a,4             ; 3 blank lines
+        lxi     h,rntitle       ; point to title for this box
         call    flower          ; draw a flower box
-        mvi     d,5             ; title bar for box
-        mvi     e,33            ; column 33
-        call    setcur          ; put cursor on title
-        lxi     d,uibold        ; bold attribute
-        mvi     c,strout        ; send to terminal
-        call    sys             ; syscall
-        lxi     d,rntitle       ; title
-        mvi     c,strout        ; print func
-        call    sys             ; syscall
-        lxi     d,uireset       ; clear bold
-        mvi     c,strout        ; send to terminal
-        call    sys             ; syscall
         mvi     d,7             ; line 7
         mvi     e,26            ; column 26
         call    setcur          ; put cursor there
@@ -745,6 +692,7 @@ ren2:
         mvi     d,5             ; line 5
         mvi     e,16            ; column 16
         mvi     a,6             ; 5 blank lines
+        lxi     h,0             ; no title
         call    flower          ; draw a flower box
         mvi     d,7             ; line 7
         mvi     e,29            ; column 29
@@ -818,19 +766,8 @@ mvua1:                          ; get target user area
         mvi     d,5             ; line 5
         mvi     e,16            ; column 16
         mvi     a,4             ; 3 blank lines
+        lxi     h,mvtitle       ; point to title for box
         call    flower          ; draw a flower box
-        mvi     d,5             ; title bar for box
-        mvi     e,27            ; column 27
-        call    setcur          ; put cursor on title
-        lxi     d,uibold        ; bold attribute
-        mvi     c,strout        ; send to terminal
-        call    sys             ; syscall
-        lxi     d,mvtitle       ; title
-        mvi     c,strout        ; print func
-        call    sys             ; syscall
-        lxi     d,uireset       ; clear bold
-        mvi     c,strout        ; send to terminal
-        call    sys             ; syscall
         mvi     d,7             ; line 7
         mvi     e,24            ; column 24
         call    setcur          ; put cursor there
@@ -917,19 +854,8 @@ uilog1:
         mvi     d,5             ; line 5
         mvi     e,16            ; column 16
         mvi     a,4             ; 3 blank lines
+        lxi     h,cdtitle       ; point to title for box
         call    flower          ; draw a flower box
-        mvi     d,5             ; title bar for box
-        mvi     e,33            ; column 33
-        call    setcur          ; put cursor on title
-        lxi     d,uibold        ; bold attribute
-        mvi     c,strout        ; send to terminal
-        call    sys             ; syscall
-        lxi     d,cdtitle       ; title
-        mvi     c,strout        ; print func
-        call    sys             ; syscall
-        lxi     d,uireset       ; clear bold
-        mvi     c,strout        ; send to terminal
-        call    sys             ; syscall
         mvi     d,7             ; line 7
         mvi     e,26            ; column 26
         call    setcur          ; put cursor there
@@ -970,6 +896,12 @@ uilog2:
 uistats:
         cpi     'I'             ; User wants disk info
         jnz     uifltr          ; nope, go to set search filter
+        mvi     c,getdsk        ; get current drive
+        call    sys             ; get drive number into A
+        adi     'A'             ; offset into ASCII
+        lxi     h,statln1+25    ; position in title where drive char lives
+        mov     m,a             ; put drive letter there
+        lxi     h,statln1       ; point to title for box
         mvi     d,5             ; line 5
         mvi     e,16            ; column 16
         mvi     a,10            ; 9 blank lines
@@ -986,25 +918,6 @@ uistats:
         lxi     d,uireset       ; clear bold attribute
         mvi     c,strout        ; send it out
         call    sys             ; syscall
-        mvi     d,5             ; line 5 - will be in top border
-        mvi     e,28            ; column 28
-        call    setcur          ; cursor move
-        lxi     d,uibold        ; set bold attribute
-        mvi     c,strout        ; send to terminal
-        call    sys             ; do the syscall
-        lxi     d,statln1       ; header
-        mvi     c,strout        ; print string
-        call    sys             ; syscall
-        mvi     d,5             ; still on line 5
-        mvi     e,52            ; replace "X" with drive letter
-        call    setcur          ; put curser in spot
-        mvi     c,getdsk        ; get current drive
-        call    sys             ; get drive number into A
-        adi     'A'             ; offset into ASCII
-        call    pchar           ; print drive letter
-        lxi     d,uireset       ; reset bold attr
-        mvi     c,strout        ; send to terminal
-        call    sys             ; print string
         mvi     d,7             ; now line 7
         mvi     e,31            ; column 31
         call    setcur          ; put cursor there
@@ -1091,18 +1004,8 @@ uifltr:
         mvi     d,5             ; line 5
         mvi     e,16            ; column 16
         mvi     a,4             ; 3 blank lines
+        lxi     h,sftitle       ; point to title
         call    flower          ; draw a flower box
-        mvi     d,5             ; title bar for box
-        mvi     e,31            ; column 31
-        call    setcur          ; put cursor on title
-        lxi     d,uibold        ; bold attribute
-        mvi     c,strout        ; send to terminal
-        call    sys             ; syscall
-        lxi     d,sftitle       ; title
-        mvi     c,strout        ; print func
-        call    sys             ; syscall
-        lxi     d,uireset       ; clear bold
-        mvi     c,strout        ; send to terminal
         call    sys             ; syscall
         mvi     d,7             ; line 7
         mvi     e,27            ; column 27
@@ -1637,8 +1540,52 @@ ginpret:
 ; Get file search filter from user
 ;
 getfltr:
+        mvi     b,0             ; byte to initial full buffer with
+        lxi     d,uinplen       ; buffer length
+        lxi     h,usrinp        ; buffer start address
+        call    memset          ; set the buffer to be fulla nulls
+        mvi     m,uinplen       ; first byte of buffer is length for CP/M
+        xchg                    ; swap H/L with D/E, syscall expects buffer there
+        mvi     c,rdcbuf        ; function to read console bufffer
+        call    sys             ; perform the syscall
+        lxi     h,usrinp+1      ; point to number of entered chars (post editing)
+        mov     a,m             ; get entered char count
+        ora     a               ; if zero, then filter is going to be default
+        jnz     gtfltr3         ; ope, user entered something...
+gtfltr1:                        ; jump here to reset filter to default
+        mvi     b,11            ; 8+3 in filename + extension/type
+        lxi     h,sfilter       ; point to filter
+gtfltr2:                        ; loop to fill filter with wildcard char
+        mvi     a,'?'           ; wildcard
+        mov     m,a             ; put it into filter
+        inx     h               ; next char
+        dcr     b               ; decrement count, sets Z flag
+        jnz     gtfltr2         ; go do next char
+        jmp     gtfltrd         ; all done, return
+gtfltr3:                        ; make sure it's not too long
+        cpi     13              ; is it more than 12? (include space for dot separator)
+        jm      gtfltr4         ; no, it's OK there
+        lxi     d,flterr        ; error message
+        call    perr            ; print error message
+        jmp     gtfltr1         ; reset filter to default
+        lxi     h,usrinp+1      ; point to number of entered chars (post editing)
+        mov     e,m             ; move that to E
+        inr     e               ; for first test
+gtfltr4:                        ; conver to all upper case
+        inx     h               ; next char
+        dcr     e               ; decrement count
+        jz      ginp2           ; go start validation
+        mov     a,m             ; drop char into A
+        cpi     'a'             ; is char greater or equal to lowercase a?
+        jm      ginp1           ; less than lower case a, return whatever this is
+        cpi     'z'+1           ; is char greater than lowercase z?
+        jp      ginp1           ; sure it, just return it
+        ani     0dfh            ; mask off bit 5 (that's the difference between A and a, etc)
+        mov     m,a             ; put case changed char back into buffer
+        jmp     gtfltr4         ; next char
 
-        call    cin2uppr        ;
+
+gtfltrd:
         ret                     ;
 
 
@@ -2020,51 +1967,86 @@ b2asc4:
 ;       A - number of rows + 1
 ;       D - start line
 ;       E - start col
+;       H/L - pointer to title
 flower:
-        dcr     e               ; decrement column by one
-        push    psw             ;
-        push    b               ;
-        push    d               ;
-        push    h               ;
-        sta     flwrtmp         ; save line count
+        push    psw             ; A=SP+7, PWS=SP+6
+        push    b               ; B=SP+5, C=SP+4
+        push    d               ; D=SP+3, E=SP+2
+        push    h               ; H=SP+1, L=SP
+        sta     flwrcnt         ; save line count
+        dcr     e               ; decrement starting column
+        lxi     h,flwrcol       ; point to column variable
+        mov     m,e             ; save column
+        lxi     h,flwrlin       ; point to line variable
+        mov     m,d             ; save current line
+        lxi     h,flwrorg       ; original line nubmer (used for title later)
+        mov     m,d             ; save it
+        dcr     d               ; decrement line by one
+        call    setcur          ; move cursor to one line above
+        lxi     d,flowr0        ; blank line, makes title look better
+        mvi     c,strout        ; print it
+        call    sys             ; syscall
+        lxi     d,uibold        ; set bold attribute
+        mvi     c,strout        ; send to terminal
+        call    sys             ; syscall
+        lxi     h,flwrlin       ; point to line
+        mov     d,m             ; pull from mem to D
+        lxi     h,flwrcol       ; point to column
+        mov     e,m             ; pull from mem to E
         call    setcur          ; put cursor at top left
         lxi     d,flowr1        ; print top line
         mvi     c,strout        ; print call
         call    sys             ; go print it
-        lda     flwrtmp         ; retrieve line count
-        cpi     0               ; initial check
-flwr1:
-        jz      flwr2           ; draw bottom line
-        lxi     h,3             ; H/L to 3 (position where D was pushed)
-        dad     sp              ; point to "pushed D"
-        mov     d,m             ; get original D (line number)
-        inr     d               ; increment
-        mov     m,d             ; save it (on stack)
-        dcx     h               ; E was pushed on stack one byte later (lower in RAM)
-        mov     e,m             ; put it back to E
+flwr1:                          ; draw interior lines
+        lxi     h,flwrlin       ; point to line
+        inr     m               ; increment it
+        mov     d,m             ; pull from mem to D
+        lxi     h,flwrcol       ; point to column
+        mov     e,m             ; pull from mem to E
         call    setcur          ; put cursor there
         lxi     d,flowr2        ; blank row in flowerbox
         mvi     c,strout        ; print that
         call    sys             ; let CP/M print it
-        lda     flwrtmp         ; get count back
+        lda     flwrcnt         ; get count back
         dcr     a               ; another line?
-        sta     flwrtmp         ; save updated line count
-        jnz     flwr1           ;
-flwr2:
-        lxi     h,3             ; H/L to 3 (position where D was pushed)
-        dad     sp              ; point to "pushed D"
-        mov     d,m             ; get original D (line number)
-        dcx     h               ; E was pushed on stack one byte later (lower in RAM)
-        mov     e,m             ; put it back to E
+        sta     flwrcnt         ; save updated line count
+        jnz     flwr1           ; jump back and print next interior line
+        lxi     h,flwrlin       ; point to line
+        inr     m               ; increment it
+        mov     d,m             ; pull from mem to D
+        lxi     h,flwrcol       ; point to column
+        mov     e,m             ; pull from mem to E
         call    setcur          ; put cursor there
         lxi     d,flowr1        ; bottom line
         mvi     c,strout        ; print func
         call    sys             ; print it
-        pop     h               ;
-        pop     d               ;
+        pop     h               ; get original H/L from stack
+        mov     a,h             ; need to check H/L
+        ora     l               ; to see if zero, if so, return now
+        jz      flwret          ; get outta here
+        push    h               ; put H/L back, too.  Gotta keep that stack straight
+        lda     flowrwd         ; get half the width of the flower box
+        lxi     h,flwrcol       ; point to starting column
+        add     m               ; add that to A, A now holds column at middle of box
+        pop     d               ; get original D/E from stack
+        push    d               ; put it back for now
+        sub     m               ; first byte is half width of title, subtract from A
+        mov     e,a             ; A has starting column for title, put into E
+        lxi     h,flwrorg       ; original line nubmer (used for title later)
+        mov     d,m             ; get it
+        call    setcur          ; put cursor there; this should center next
+        pop     h               ; get H/L one last time
+        inx     h               ; move past the first byte, which was title witdh / 2
+        xchg                    ; put that into D/E for print string syscall
+        mvi     c,strout        ; print string func
+        call    sys             ; syscall
+        lxi     d,uireset       ; clear bold attribute
+        mvi     c,strout        ; send to terminal
+        call    sys             ; syscall
+flwret:
+        pop     d               ; (remember, H was popped above, don't pop again)
         pop     b               ;
         pop     psw             ;
-        inr     e               ; restore column position
         ret
 
 ;
@@ -2404,6 +2386,7 @@ perr:
         mvi     d,5             ; line 5
         mvi     e,16            ; column 17
         mvi     a,5             ; 4 blank lines
+        lxi     h,ertitle       ; point to title
         call    flower          ; draw a flower box
         mvi     d,7             ; line 7
         mvi     e,24            ; column 24
@@ -2773,6 +2756,7 @@ enumful:
         mvi     d,5             ; line 5
         mvi     e,16            ; column 16
         mvi     a,4             ; 3 blank lines
+        lxi     h,0             ; no title
         call    flower          ; draw a flower box
         mvi     d,7             ; line 7
         mvi     e,20            ; column 20
@@ -3096,8 +3080,10 @@ prnui4:
 ;***************************************************
 canary  db      0beh,0efh,0cah,0feh
 errcan  db      'ERROR - Stack is corrupt!',CR,LF,'$'
+flowr0  db      '                                                      $'
 flowr1  db      ' +--------------------------------------------------+ $'
 flowr2  db      ' |                                                  | $'
+flowrwd db      27
 stemver db      'STEM $'
 vernum  db      '(v0.9.9)$'
 welcom1 db      'An Altair 8800 File Manager$'
@@ -3148,15 +3134,16 @@ logmsg  db      'Select new disk letter: $'
 usrcmsg db      'Select new user area (0-15): $'
 mvuamsg db      'Select target user area (0-15): $'
 calcing db      'Calculating...$'
-uatitle db      '[ Switch User Area ]$'
-dltitle db      '[ Delete File ]$'
-cptitle db      '[ Copy File ]$'
-tptitle db      '[ Display File ]$'
-rntitle db      '[ Rename File ]$'
-mvtitle db      '[ Copy File to User Area ]$'
-cdtitle db      '[ Switch Drive ]$'
-sftitle db      '[ Set Search Filter ]$'
-statln1 db      '[ Information for drive X: ]$'
+uatitle db      10,'[ Switch User Area ]$'
+dltitle db      7,'[ Delete File ]$'
+cptitle db      6,'[ Copy File ]$'
+tptitle db      8,'[ Display File ]$'
+rntitle db      7,'[ Rename File ]$'
+mvtitle db      13,'[ Copy File to User Area ]$'
+cdtitle db      8,'[ Switch Drive ]$'
+sftitle db      10,'[ Set Search Filter ]$'
+ertitle db      4,'[ ERROR ]$'
+statln1 db      14,'[ Information for drive X: ]$'
 statln2 db      'Capacity: $'
 statln3 db      'Used: $'
 statln4 db      'Blocks: $'
@@ -3166,6 +3153,7 @@ statln7 db      'Used dir entries: $'
 statkb  db      ' KBytes$'
 setflt1 db      'Current filter: $'
 setflt2 db      'New filter: $'
+flterr  db      'Bad filter, must be 8.3$'
 sfilter db      '???????????'
 schfcb  db      0,'???????????',0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0
 blnkfcb db      0,'           ',0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0
@@ -3236,7 +3224,10 @@ allflag ds      1               ; flag to indicate "ALL" files
 eofflag ds      1               ; last read was EOF
 fcount  ds      1               ; file count addr
 flsel   ds      1               ; selected file number
-flwrtmp ds      1               ; temporary storage for flower box
+flwrcnt ds      1               ; flower box line count
+flwrcol ds      1               ; flower box starting column
+flwrlin ds      1               ; flower box line number
+flwrorg ds      1               ; flower box original line number
 drvtmp  ds      1               ; drive letter storage during drive change
 entlim  ds      1               ; entry limit value (for 1 byte entry)
 enttmp  ds      1               ; temp entry value
