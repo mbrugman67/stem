@@ -1540,10 +1540,18 @@ ginpret:
 ; Get file search filter from user
 ;
 getfltr:
-        mvi     b,0             ; byte to initial full buffer with
-        lxi     d,uinplen       ; buffer length
-        lxi     h,usrinp        ; buffer start address
-        call    memset          ; set the buffer to be fulla nulls
+        mvi     b,11            ; 8+3 in filename + extension/type
+        lxi     h,sfilter       ; point to filter
+gtfltrc:                        ; initially clear filter (set to all '?')
+        mvi     a,'?'           ; wildcard
+        mov     m,a             ; put it into filter
+        inx     h               ; next char
+        dcr     b               ; decrement count, sets Z flag
+        jnz     gtfltrc         ; go do next char
+        mvi     b,0             ; byte to input full buffer with
+        lxi     d,uinplen       ; input buffer length
+        lxi     h,usrinp        ; input buffer start address
+        call    memset          ; set input buffer to be fulla nulls
         mvi     m,uinplen       ; first byte of buffer is length for CP/M
         xchg                    ; swap H/L with D/E, syscall expects buffer there
         mvi     c,rdcbuf        ; function to read console bufffer
@@ -1551,41 +1559,78 @@ getfltr:
         lxi     h,usrinp+1      ; point to number of entered chars (post editing)
         mov     a,m             ; get entered char count
         ora     a               ; if zero, then filter is going to be default
-        jnz     gtfltr3         ; ope, user entered something...
-gtfltr1:                        ; jump here to reset filter to default
-        mvi     b,11            ; 8+3 in filename + extension/type
-        lxi     h,sfilter       ; point to filter
-gtfltr2:                        ; loop to fill filter with wildcard char
-        mvi     a,'?'           ; wildcard
-        mov     m,a             ; put it into filter
-        inx     h               ; next char
-        dcr     b               ; decrement count, sets Z flag
-        jnz     gtfltr2         ; go do next char
-        jmp     gtfltrd         ; all done, return
-gtfltr3:                        ; make sure it's not too long
+        rz                      ; user didn't enter anything, just return
         cpi     13              ; is it more than 12? (include space for dot separator)
-        jm      gtfltr4         ; no, it's OK there
+        jm      gtfltr1         ; no, it's OK there
         lxi     d,flterr        ; error message
         call    perr            ; print error message
-        jmp     gtfltr1         ; reset filter to default
+        ret                     ; return with filter set to default after error message
+gtfltr1:
         lxi     h,usrinp+1      ; point to number of entered chars (post editing)
         mov     e,m             ; move that to E
         inr     e               ; for first test
-gtfltr4:                        ; conver to all upper case
+gtfltr2:                        ; convert to all upper case
         inx     h               ; next char
         dcr     e               ; decrement count
-        jz      ginp2           ; go start validation
+        jz      gtfltr3         ; go start validation
         mov     a,m             ; drop char into A
         cpi     'a'             ; is char greater or equal to lowercase a?
-        jm      ginp1           ; less than lower case a, return whatever this is
+        jm      gtfltr2         ; less than lower case a, go try next char
         cpi     'z'+1           ; is char greater than lowercase z?
-        jp      ginp1           ; sure it, just return it
+        jp      gtfltr2         ; sure it, try next char
         ani     0dfh            ; mask off bit 5 (that's the difference between A and a, etc)
         mov     m,a             ; put case changed char back into buffer
-        jmp     gtfltr4         ; next char
-
-
-gtfltrd:
+        jmp     gtfltr2         ; next char
+gtfltr3:                        ; validate user entry loop
+        lxi     h,usrinp+1      ; point to number of entered chars (post editing)
+        mov     b,m             ; move that to B, we already know it is > 0
+        inx     h               ; first char of entry
+gtfltr4:
+        mov     a,m             ; get next char
+        cpi     '?'             ; wildcard is OK
+        jz      gtfltr4a        ; next char
+        cpi     '.'             ; separator is OK
+        jz      gtfltr4a        ; next char
+        cpi     'Z'+1           ; can't be greater than "Z"
+        jp      filterr         ; return error
+        cpi     'A'             ; compare to "A"
+        jp      gtfltr4a        ; between "A" and "Z" is OK
+        cpi     '9'+1           ; can't be between "9" and "A"
+        jp      filterr         ; so that would be an error
+        cpi     '0'             ; can't be less than zero (sorry, B.E.E.)
+        jm      filterr         ; error
+gtfltr4a:                       ; next validation char
+        inx     h               ; increment pointer
+        dcr     b               ; decrement count
+        jnz     gtfltr4         ; more to check
+        lxi     d,sfilter       ; point to search filter
+        lxi     h,usrinp+1      ; point to number of entered chars (post editing)
+        mov     b,m             ; move that to B, we already know it is > 0
+        inx     h               ; first char of entry
+gtfltr5:                        ; copy input to filter loop
+        mov     a,m             ; get input char
+        cpi     '.'             ; was it a period (dot separator)
+        jnz     gtfltr6         ; nope
+        inx     h               ; skip to next input char
+        lxi     d,sfilter+8     ; jump right to the extension/type section of filter
+        mov     a,b             ; get remainig count of chars to A
+        cpi     3               ; can't be more than 3 remaining chars for extension/type
+        jm      gtfltr7         ; yup, we're ok
+        mvi     b,4             ; ugh, just take the next 3 chars
+        jmp     gtfltr7         ; skip down to counter decrement
+gtfltr6:                        ; actual count happens here
+        inx     h               ; increment to next input char
+        xchg                    ; swap H/L with D/E, now H/L now points to filter string
+        mov     m,a             ; put user char into filter
+        inx     h               ; increment filter pointer
+        xchg                    ; swap H/L with D/E again, H/L points to user input again
+gtfltr7:
+        dcr     b               ; decrement count, sets Z flag
+        jnz     gtfltr5         ; next char (if any)
+        ret                     ; new filter is set - go back to reload
+filterr:
+        lxi     d,flterr        ; error message pointer
+        call    perr            ; print error message
         ret                     ;
 
 
@@ -3159,7 +3204,7 @@ statln7 db      'Used dir entries: $'
 statkb  db      ' KBytes$'
 setflt1 db      'Current filter: $'
 setflt2 db      'New filter: $'
-flterr  db      'Bad filter, must be 8.3$'
+flterr  db      'Bad filter; must be 8.3, A-Z, 0-9, or ?$'
 sfilter db      '???????????'
 schfcb  db      0,'???????????',0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0
 blnkfcb db      0,'           ',0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0
