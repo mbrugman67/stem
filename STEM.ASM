@@ -2025,12 +2025,18 @@ flwr1:                          ; draw interior lines
         ora     l               ; to see if zero, if so, return now
         jz      flwret          ; get outta here
         push    h               ; put H/L back, too.  Gotta keep that stack straight
+        mov     a,m             ; get centering value for title
+        sta     flwcent         ; store it to ram for now
         lda     flowrwd         ; get half the width of the flower box
         lxi     h,flwrcol       ; point to starting column
         add     m               ; add that to A, A now holds column at middle of box
+        mov     c,a             ; store that to C for now
+        lda     flwcent         ; get the offset for this instance's title string
+        mov     b,a             ; stash that in  B
+        mov     a,c             ; get center of box back into A
+        sub     b               ; offset left half width of title string to center it
         pop     d               ; get original D/E from stack
         push    d               ; put it back for now
-        sub     m               ; first byte is half width of title, subtract from A
         mov     e,a             ; A has starting column for title, put into E
         lxi     h,flwrorg       ; original line nubmer (used for title later)
         mov     d,m             ; get it
@@ -3228,6 +3234,7 @@ flwrcnt ds      1               ; flower box line count
 flwrcol ds      1               ; flower box starting column
 flwrlin ds      1               ; flower box line number
 flwrorg ds      1               ; flower box original line number
+flwcent ds      1               ; flower box offset to center title
 drvtmp  ds      1               ; drive letter storage during drive change
 entlim  ds      1               ; entry limit value (for 1 byte entry)
 enttmp  ds      1               ; temp entry value
