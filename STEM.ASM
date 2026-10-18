@@ -442,11 +442,35 @@ cpy2:
         call    sys             ; syscall
         call    getfnm          ; get filename from user
         ora     a               ; check return code
-        jz      cpy3            ; good filename
+        jz      cpy2a           ; good filename
         lxi     d,badfnm        ; bad filename message
         call    perr            ; print the error
         jmp     cpybox          ; re-prompt for name
-cpy3:                           ; start copy process, dest FCB is already in D/E
+cpy2a:                          ; check if destination disk needs to be checked
+        mvi     c,getdsk        ; get currrent disk
+        call    sys             ; syscall
+        sta     drvtmp          ; save current disk
+        inr     a               ; for FCB, drive A=1, not zero
+        mov     b,a             ; save current disk in B
+        lxi     d,fcb2          ; point to destination FCB
+        ldax    d               ; get destination drive (first byte of FCB)
+        cmp     b               ; current and destination the same?
+        jz      cpy3            ; go start copying
+        call    chkdsk          ; is destination disk there? (disk already in A)
+        mov     a,h             ; check H/L return value; if zero
+        ora     l               ; then disk is not present
+        jnz     cpy3            ; disk is OK, go try to create dest file
+        lxi     d,cpyer2        ; error message
+        call    perr            ; display error box
+        jmp     cpybox          ; go try again
+cpy3:                           ; start copy process
+        lda     drvtmp          ; we need to make sure source drive is active again
+        call    chkdsk          ; this call resets block count variables, etc
+        lda     drvtmp          ; get drive selection again
+        mov     e,a             ; put it into E
+        mvi     c,seldsk        ; change disk BDOS call
+        call    sys             ; CP/M disk change
+        lxi     d,fcb2          ; make sure dest FBC is in D/E for syscalls
         mvi     c,fopen         ; syscall code for open file
         call    sys             ; try to open the file
         cpi     0ffh            ; 255 means file does not exist.  Good!
@@ -983,16 +1007,74 @@ uistat3:
         call    cntdirs         ; go count used directory entries
         call    prn16           ; result was in H/L, print it
         mvi     d,14            ; line 14
-        mvi     e,29            ; column 29
-        call    setcur          ; put cursor at 14,29
+        mvi     e,21            ; column 21
+        call    setcur          ; put cursor at 14,21
         lxi     d,uibold        ; bold text
         mvi     c,strout        ; make it so
         call    sys             ; syscall
-        lxi     d,contmsg       ; press any key text
+        lxi     d,cntmsg        ; press d for details, aany key text
         mvi     c,strout        ; print func
         call    sys             ; syscall
         lxi     d,uireset       ; clear bold attribute
         mvi     c,strout        ; print
+        call    sys             ; syscall
+        call    cin2uppr        ; wait for input
+        cpi     'D'             ; check for a "D"
+        jnz     usrlp0          ; go back for redraw
+        lxi     h,statln8       ; point to title for box
+        mvi     d,3             ; line 3
+        mvi     e,16            ; column 16
+        mvi     a,19            ; 198 blank lines
+        call    flower          ; draw a flower box
+        mvi     a,0             ; zero A
+        sta     trgtua          ; save it
+uistat4:                        ; loop through user areas
+        lda     trgtua          ; get this user area
+        adi     5               ; add five for line number
+        mov     d,a             ; that's the line number
+        mvi     e,34            ; column 34
+        cpi     15              ; is this UA 9 or less?
+        jm      uistat5         ; no
+        dcr     e               ; move left one column for double-digit
+uistat5:
+        call    setcur          ; put cursor there
+        lxi     d,statln9       ; "User Area" text
+        mvi     c,strout        ; print func
+        call    sys             ; syscall
+        lda     trgtua          ; get this user area again
+        mov     l,a             ; move it to L for next subroutine
+        call    prn8            ; print it
+        mvi     a,':'           ; colon
+        call    pchar           ; print it
+        mvi     a,' '           ; space
+        call    pchar           ; print it
+        lda     trgtua          ; get current UA again
+        ral                     ; multiply by 2
+        mvi     d,0             ; move that to D/E
+        mov     e,a             ; move ua*2 to D/E
+        lxi     h,uacnt         ; get pointer to UA count array
+        dad     d               ; increment by current UA
+        mov     d,m             ; get low byte
+        inx     h               ; point to high byte
+        mov     e,m             ; get high byte
+        xchg                    ; swap H/L <--> D/E
+        call    prn16           ; print count
+        lda     trgtua          ; get the current UA again
+        inr     a               ; increment to next
+        sta     trgtua          ; save it
+        cpi     16              ; are we through all of them?
+        jm      uistat4         ; go back for next
+        mvi     d,22            ; line 20
+        mvi     e,28            ; column 28
+        call    setcur          ; put cursor there
+        lxi     d,uibold        ; set bold attribute
+        mvi     c,strout        ; send to terminal
+        call    sys             ; syscall
+        lxi     d,contmsg       ; "Press any key"... message
+        mvi     c,strout        ; print msg
+        call    sys             ; syscall
+        lxi     d,uireset       ; clear bold attribute
+        mvi     c,strout        ; send to terminal
         call    sys             ; syscall
         call    cin2uppr        ; wait for input
         jmp     usrlp0          ; go back for complete redraw
@@ -1173,6 +1255,18 @@ help:
         mvi     c,strout        ; display string
         call    sys             ; syscall
         call    cin2uppr        ; pause for input
+
+        call    cls             ; clear screen
+        lxi     d,helpttl       ; help title
+        mvi     c,strout        ; display string
+        call    sys             ; syscall
+        lxi     d,hlpflt        ; help using filters
+        mvi     c,strout        ; display string
+        call    sys             ; syscall
+        lxi     d,contmsg       ; continue message
+        mvi     c,strout        ; display string
+        call    sys             ; syscall
+        call    cin2uppr        ; pause for input
         ret                     ;
 
 ;
@@ -1279,6 +1373,10 @@ chkdsk4:
 ;       H/L - total directory entries used (16-bit)
 ;
 cntdirs:
+        lxi     h,uacnt         ; point to array of files per user area
+        lxi     d,32            ; 32 bytes long
+        mvi     b,0             ; zero out all 32 bytes of the array
+        call    memset          ; go do the setting
         lxi     h,0             ; zero H/L
         shld    dircnt          ; store it; zero used directories at this point
         mvi     c,guser         ; syscall to get/set current User Area
@@ -1305,8 +1403,9 @@ cntdir1:                        ; outer outer loop - iterating through user area
         cpi     0ffh            ; compare to 0xff - no file found
         jz      cntdir3         ; no files, go check next user area
         lhld    dircnt          ; get current directory count
-        inx     h               ; incrment it...
+        inx     h               ; increment it...
         shld    dircnt          ; ...and save
+        call    incfcnt         ; increment count for this user area
 cntdir2:                        ; inner loop - checking for additional files
         mvi     c,srchn         ; check next file function
         call    sys             ; syscall
@@ -1315,6 +1414,7 @@ cntdir2:                        ; inner loop - checking for additional files
         lhld    dircnt          ; get current directory count
         inx     h               ; incrment it...
         shld    dircnt          ; ...and save
+        call    incfcnt         ; increment for this user area
         jmp     cntdir2         ; try for more!
 cntdir3:                        ; check if we have another ua to check
         lda     trgtua          ; get last scanned user area
@@ -1330,6 +1430,34 @@ cntdrdn:
         call    sys             ; syscall
         lhld    dircnt          ; reload final directory entry count
         ret                     ; and return that to caller in H/L
+
+;
+; incfcnt
+; Increment file count for a user area
+;
+incfcnt:
+        push    b               ;
+        push    d               ;
+        push    h               ;
+        lda     trgtua          ; get the current user area
+        ral                     ; multipy by 2
+        mvi     d,0             ; set D/E to
+        mov     e,a             ; shifted user area number
+        lxi     h,uacnt         ; get pointer to member 0 of the array
+        dad     d               ; offset by index, H/L points to desired member of array
+        mov     a,m             ; get low byte
+        adi     1               ; add 1 to that
+        mov     m,a             ; store that back as the low byte
+        jnc     incfret         ; no carry, go to restore stack and return
+        inx     h               ; increment to high byte
+        mov     a,m             ; get that byte
+        adi     1               ; add the carry
+incfret:
+        pop     h               ;
+        pop     d               ;
+        pop     b               ;
+        ret
+
 
 ;
 ; calcdsk
@@ -3166,12 +3294,14 @@ render  db      '        UNABLE TO RENAME FILE!$'
 badfnm  db      '          BAD FILE NAME$'
 logerr  db      '     DISK x: IS NOT AVAILABLE!$'
 mvuaer1 db      '  SELECT A DIFFERENT USER AREA!$'
+cpyer2  db      ' DESTINATION DRIVE NOT AVAILABLE!$'
 cpyok   db      ' blocks copied.$'
 mvuaok  db      ' blocks copied to user area $'
 typhdr  db      'Displaying file $'
 typftr  db      'Press <SPACE> to continue, any other to exit$'
 typend  db      'End of file, any key to continue$'
 contmsg db      'Press any key to continue$'
+cntmsg  db      'Press D for details, any other to continue$'
 delmsg  db      'Delete file $'
 cpymsg1 db      'Copy file $'
 renmsg1 db      'Rename file $'
@@ -3201,6 +3331,8 @@ statln4 db      'Blocks: $'
 statln5 db      'KB/Block: $'
 statln6 db      'Max dir entries: $'
 statln7 db      'Used dir entries: $'
+statln8 db      12,'[ Files per User Area ]$'
+statln9 db      'User Area $'
 statkb  db      ' KBytes$'
 setflt1 db      'Current filter: $'
 setflt2 db      'New filter: $'
@@ -3214,10 +3346,11 @@ helpver db      '                        Version $'
 hlpusng db      'When started, the screen is divided into 3 horizontal sections:',CR,LF
         db      '+ Top line - this shows which drive is currently being read,',CR,LF
         db      '  how many files are on the drive, and how many are tagged.',CR,LF
-        db      '+ Middle section is a list of all files on the drive.  Each',CR,LF
-        db      '  filename is preceded with "[ ]" to show tag status.  For',CR,LF
-        db      '  example: [ ]STEM.COM',CR,LF
-        db      '+ Bottom 2 lines show the currently selected file and commands.',CR,LF
+        db      '+ Middle section is a list of all files on the drive that',CR,LF
+        db      '  match the current search filter.  Each filename is preceded',CR,LF
+        db      '   with "[ ]" to show tag status.  For example: [ ]STEM.COM',CR,LF
+        db      '+ Bottom 3 lines show the currently selected file, available',CR,LF
+        db      '  commands, and search filter.',CR,LF
         db      '  If supported by terminal, selected filename is in bold.',CR,LF
         db      CR,LF,'Using STEM',CR,LF
         db      '+ All operations are performed on tagged files.  To tag a',CR,LF
@@ -3260,6 +3393,21 @@ hlpshrt db      ' Short command help:',CR,LF
         db      ' P - select previous file (wraps around beginning to end)',CR,LF
         db      ' U - change User Area',CR,LF,CR,LF,'$'
         db      ' <SPACE> - tag/untag toggle of selected file$'
+hlpflt  db      'Notes about using file search filter',CR,LF,CR,LF
+        db      'The file search filter will limit the files returned in'
+        db      ' the list.',CR,LF
+        db      'The only wildcard character allowed is "?", which is used to',CR,LF
+        db      'replace one character in filename.',CR,LF,CR,LF
+        db      'The default filter is "????????.???", which will search for all',CR,LF
+        db      'files in the current user area of the logged-in disk.',CR,LF,CR,LF
+        db      'Setting the search filter:',CR,LF
+        db      '+ Entering an empty filter restores the default filter',CR,LF
+        db      '+ Examples:',CR,LF
+        db      '  + "S.TXT" -> search for all files that start with "S" and'
+        db      CR,LF,'    have an type/extension of "TXT"',CR,LF
+        db      '  + ".COM" -> search for all files with "COM" type/extension'
+        db      CR,LF,'  + "??EM" -> search for all files with "EM" as the 3rd and'
+        db      CR,LF,'    4th character, and have any type/extension',CR,LF,CR,LF,'$'
 
 ;***************************************************
 ; START OF VARIABLE DATA AREA
@@ -3303,6 +3451,7 @@ flposn  ds      2               ; position in file name array
 flist   ds      (maxfls*fnlen)+1; area for list of filenames
 tags    ds      tagcnt          ; bitmap of tagged files
 esctmp  ds      24              ; temp area for building escape sequences
+uacnt   ds      32              ; count of files in each user area (2 bytes*16 UAs)
 stkcny  ds      4               ; stack canary
 usrstk  ds      64              ; 32 level stack
 newstk                          ; top of newstk area
