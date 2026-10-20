@@ -3264,7 +3264,7 @@ flowr1  db      ' +--------------------------------------------------+ $'
 flowr2  db      ' |                                                  | $'
 flowrwd db      27
 stemver db      'STEM $'
-vernum  db      '(v0.9.9)$'
+vernum  db      '(v1.0.0)$'
 welcom1 db      'An Altair 8800 File Manager$'
 welcom2 db      '2026 Mattydyne Heavy Industries$'
 welcom3 db      01bh,'[1m"H" for help, any other key to start',01bh,'[0m',CR,LF,'$'

@@ -6,7 +6,8 @@ By file manager, I mean something like XTreeGold, Midnight Commander, etc.; a te
 The program name is `STEM` because CP/M doesn't have subdirectories, so anything with "tree" in the name would be kind of dumb :)
 
 ## Status
-### Completed items:
+### Completed items
+The program is basically feature complete at this point:
 + Loading/listing files on drives `A` to `P`
 + Switching CP/M "User Area"
 + File copy
@@ -16,20 +17,15 @@ The program name is `STEM` because CP/M doesn't have subdirectories, so anything
 + File rename
 + File deletion
 + File display; the program will try to determine if the file content is ASCII or binary.  If it is ASCII, it will be displayed as pages of text, if binary it will be displayed as pages of hexdump
++ Disk information - display of disk capacity and usage in KB, number of available directory entries and count of used, and count off files per user area (handy for finding those lost files!)
 
 ### Known issues and limitations
 + Program will load a maximum of 85 files per drive
 + ASCII/Text display pager makes some assumptions about what will fit on a screen.  Screen is assumed to be 80 columns by 24 lines
 
-### TODO
+### Long term roadmap
 + Increase file capacity
-  + The big thing is that the middle section of screen (file listing) will need to be scrollable independent of the rest of the screen
-  + Tagging will need to be refactored, but not a big deal
 + Add compression/decompression using standard ZIP algorithms
-
-This is a work in progress.  As seen in the `TODO`, It is not feature complete.  Contributions are great!  Here are a couple of ways:
-+ Try the program out and submit any issues you may find.  Please include as much detail as possible.
-+ Fork this repo, do some coding, and submit a PR.  *(A PR that includes any code produced by any kind of LLM/coding agent will be rejected.  Even the most insignificant bit of that crap will be thrown out.  Sorry, my repo, my rules.)*
 
 ## About the program
 The program was written from scratch in 8080 assembly language.  All file I/O is handled by syscalls to CP/M; because of that, the program *should* work on any computer with an 8080 or Z80 CPU that is running CP/M 2.2, but I really can't guarantee that :/
@@ -110,9 +106,9 @@ The program divides the screen into 3 sections:
   + `User Area 0` tells us that these are the files in CP/M user area 0.  CP/M 2.2 doesn't support directories/subdirectories, but CP/M 2.2 introduced "User Areas".  Basically, files can be logically divided into distinct User Areas from 0 to 15.  See CP/M documentation/online for detailed information. (`STEM` makes copying files between user areas a bit easier!)
   + `(total of 48 files, 0 files tagged)` - in this case, the program found 48 files in drive `A:`, user area 0.  No files are currently tagged; more on file tagging below.
 
-+ The middle section shows the actual file listing.  Files are listed in 5 columns, each filename preceded by a placeholder to show tag status:  untagged files have an empty place holder (`[ ]`), tagged files are shown with a capital x (`[X]`).  *There is currently a limitation that only the first 85 files will be listed.*
++ The middle section shows the actual file listing of files matching the current search filter.  Files are listed in 5 columns, each filename preceded by a placeholder to show tag status:  untagged files have an empty place holder (`[ ]`), tagged files are shown with a capital x (`[X]`).  *There is currently a limitation that only the first 85 files will be listed.*
 
-+ The bottom section consists of 2 lines
++ The bottom section consists of 3 lines
   + The first line shows the currently selected file in **BOLD** if your terminal supports it.  
     + File selection is handled by the `N` and `P` keys; these move to the next or previous file in the listing respectively.  If at the first file, `P` will wrap around the last file; if at the last, `N` will wrap around to the first.
     + The `<SPACE>` bar will toggle tag status of the currently selected file
@@ -126,8 +122,10 @@ The program divides the screen into 3 sections:
     + `M` - Copy tagged files to a different User Area on the current disk
     + `L` - "Log" another disk (switch to another disk)
     + `I` - Display disk geometry and size information 
+    + `F` - Set file search filter
     + `X` - Exit the program 
     + `H` - Display the help information
+  + The third line shows the current search filter, see below for information on filtering
 
 *Note - commands can be entered in upper or lower case*
 
@@ -196,4 +194,32 @@ Another important concept is that the block size will dictate the amount of spac
 
 Another thing to keep in mind is that files can be spread across several user areas.  In the above screenshot, the listing shows 24 total files, but there are 29 directory entries used.  That indicates that there are an additional 5 files in different user areas.
 
+Pressing the `D` key while this dialog is showing will bring up the "Files per User Area" display:
+
+![file Count](./img/fcount.png)
+
 *NOTE - it takes a few seconds to calculate all of the disk information*
+
+### Filtering file search 
+By default, STEM will search for all files in the current user area of the current disk.  Sometimes, it might be easier to limit the listed files to match a filter critera.  The current search filter is shown on the last line of the screen. 
+
+General information on setting filters:
++ Use the `F` key to bring up the filter dialog
++ The filter is limited to the following characters:
+  + letters `A` to `Z` 
+  + numbers `0` to `9`
+  + the single replacement wildcard character `?`
++ To reset the filter to default (`????????.???`), press `<ENTER>` with no filter characters entered
++ It is not necessary to enter the entire filter string; un-entered characters are set to the wildchard character
++ Entered characters are automatically converted to upper case
+
+#### Filter Examples
++ Default filter of `????????.???` -> search for all files
++ `ST.ASM` -> will expand to `ST??????.ASM` and will search for all files that start with `ST` and are of type `ASM`
++ `.TXT` -> will expand to `????????.TXT` and will search for all files that are of type `TXT`
++ `?S?X.T` -> will expand to `?S?X????.T??` and will search for all files that have an `S` in the second letter of filename, have an `X` in the fourth, and have a type/extension that begins with `T`.
+
+## Contributing
+Contributions are great!  Here are a couple of ways:
++ Try the program out and submit any issues you may find.  Please include as much detail as possible.
++ Fork this repo, do some coding, and submit a PR.  *(A PR that includes any code produced by any kind of LLM/coding agent will be rejected.  Even the most insignificant bit of that crap will be thrown out.  Sorry, my repo, my rules.)*
