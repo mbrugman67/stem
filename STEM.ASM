@@ -121,15 +121,20 @@ fnlen   equ     11              ; length of 8.3 filename (8+3)
 dspace  equ     16              ; spacing between filenames in list
 dsmax   equ     71              ; when to wrap filename list
 strtrow equ     3               ; first row of file list
-maxfls  equ     70              ; max files in buffer
+maxfls  equ     85              ; max files in buffer
 tagcnt  equ     maxfls/8+1      ; number of tag bytes in array
 uinplen equ     40              ; length of user input buffer
+uiline  equ     22              ; line number for UI stuffs to begin
 
 ;****************************************************
 ; Start of actual program code here
 ; .org 100h - TPA area starts at 0x0100
 ;****************************************************
         org     0100h           ; entry point at 100 hex (TPA area)
+        mvi     c,version       ; need to get CP/M version
+        call    sys             ; syscall; Machine type in H, version in L
+        mov     a,l             ; get version number
+        sta     cpmver          ; save that to RAM for later
         lxi     d,canary        ; point to fixed canary value
         lxi     h,stkcny        ; point to last 4 bytes under stack
         lxi     b,4             ; 4 bytes of stack canary
@@ -145,6 +150,7 @@ uinplen equ     40              ; length of user input buffer
         call    chkdsk          ; initial call to get stats for starting disk
 
         ; Draw the "Welcome" header over whatever is on the screen
+        lxi     h,0             ; no title for this
         mvi     d,5             ; flower box at line 5
         mvi     e,16            ; flower box at column 16
         mvi     a,8             ; 7 blank lines in box
@@ -178,9 +184,54 @@ uinplen equ     40              ; length of user input buffer
         call    sys             ; call the system function to print string
         call    cin2uppr        ; get input
         cpi     'H'             ; did user hit "H"?
-        jnz     usrlp0          ; nope
+        jnz     verchk          ; nope, go check version
         call    help            ; show help
 
+        ; if the machine is running a version of CP/M other than 2.2, we need
+        ; to do some stuffs.  Less than 2.2 and this won't work, just exit.
+        ; Greater than 2.2 and it *should* work, but I haven't tested, so
+        ; just give a warning to user.
+verchk:
+        lda     cpmver          ; get the version back into A from RAM
+        cpi     022h            ; compare to version 2.2
+        jz      usrlp0          ; good version - go start
+        jc      verlow          ; version too old
+        lxi     h,0             ; no title for this
+        mvi     d,5             ; flower box at line 5
+        mvi     e,16            ; flower box at column 16
+        mvi     a,8             ; 7 blank lines in box
+        call    flower          ; print a flower box
+        mvi     d,8             ; line 8
+        mvi     e,25            ; column 25
+        call    setcur          ; put cursor there
+        lxi     d,vhierr        ; warning message that CP/M is too new
+        mvi     c,strout        ; print string func
+        call    sys             ; syscall
+        mvi     d,9             ; line 9
+        mvi     e,25            ; column 25
+        call    setcur          ; put the cursor there
+        lxi     d,vhierr2       ; second line of message
+        mvi     c,strout        ; print func
+        call    sys             ; syscall
+        mvi     d,12            ; line 12
+        mvi     e,29            ; column 29
+        call    setcur          ; put cursor there
+        lxi     d,contmsg       ; press any key text
+        mvi     c,strout        ; print string func
+        call    sys             ; syscall
+        call    cin2uppr        ; wait for keypress
+        jmp     usrlp0          ; start up after warning
+verlow:                         ; CP/M is older than 2.2, this won't work
+        call    CRLF            ; a newline before this message
+        call    CRLF            ; another newline to be safe
+        call    CRLF            ; yet another
+        call    CRLF            ; one last one to clear the flower box
+        lxi     d,vlowerr       ; get message text
+        mvi     c,strout        ; print text func
+        call    sys             ; syscall
+        call    CRLF            ; one after, just to be more clear
+        call    CRLF            ; sigh
+        jmp     cleanup         ; return to CP/M
 
         ; start of main loop.  Entering at 'usrlp0' will result in a total
         ; re-read of filenames and screen redraw.  Entering at 'uinext' will
@@ -296,6 +347,7 @@ usr2:
         mvi     d,5             ; line 5
         mvi     e,16            ; column 16
         mvi     a,4             ; 3 blank lines
+        lxi     h,uatitle       ; point to string for title
         call    flower          ; draw a flower box
         mvi     d,7             ; line 7
         mvi     e,24            ; column 24
@@ -338,6 +390,7 @@ delbox:
         mvi     d,5             ; line 5
         mvi     e,16            ; column 16
         mvi     a,4             ; 3 blank lines
+        lxi     h,dltitle       ; title for flower box
         call    flower          ; draw a flower box
         mvi     d,7             ; line 7
         mvi     e,26            ; column 26
@@ -393,6 +446,7 @@ cpybox:
         mvi     d,5             ; line 5
         mvi     e,16            ; column 16
         mvi     a,4             ; 3 blank lines
+        lxi     h,cptitle       ; title for box
         call    flower          ; draw a flower box
         mvi     d,7             ; line 7
         mvi     e,26            ; column 26
@@ -420,6 +474,7 @@ cpy2:
         mvi     d,5             ; line 5
         mvi     e,16            ; column 16
         mvi     a,6             ; 5 blank lines
+        lxi     h,0             ; no title for this box
         call    flower          ; draw a flower box
         mvi     d,7             ; line 7
         mvi     e,29            ; column 29
@@ -436,11 +491,35 @@ cpy2:
         call    sys             ; syscall
         call    getfnm          ; get filename from user
         ora     a               ; check return code
-        jz      cpy3            ; good filename
+        jz      cpy2a           ; good filename
         lxi     d,badfnm        ; bad filename message
         call    perr            ; print the error
         jmp     cpybox          ; re-prompt for name
-cpy3:                           ; start copy process, dest FCB is already in D/E
+cpy2a:                          ; check if destination disk needs to be checked
+        mvi     c,getdsk        ; get currrent disk
+        call    sys             ; syscall
+        sta     drvtmp          ; save current disk
+        inr     a               ; for FCB, drive A=1, not zero
+        mov     b,a             ; save current disk in B
+        lxi     d,fcb2          ; point to destination FCB
+        ldax    d               ; get destination drive (first byte of FCB)
+        cmp     b               ; current and destination the same?
+        jz      cpy3            ; go start copying
+        call    chkdsk          ; is destination disk there? (disk already in A)
+        mov     a,h             ; check H/L return value; if zero
+        ora     l               ; then disk is not present
+        jnz     cpy3            ; disk is OK, go try to create dest file
+        lxi     d,cpyer2        ; error message
+        call    perr            ; display error box
+        jmp     cpybox          ; go try again
+cpy3:                           ; start copy process
+        lda     drvtmp          ; we need to make sure source drive is active again
+        call    chkdsk          ; this call resets block count variables, etc
+        lda     drvtmp          ; get drive selection again
+        mov     e,a             ; put it into E
+        mvi     c,seldsk        ; change disk BDOS call
+        call    sys             ; CP/M disk change
+        lxi     d,fcb2          ; make sure dest FBC is in D/E for syscalls
         mvi     c,fopen         ; syscall code for open file
         call    sys             ; try to open the file
         cpi     0ffh            ; 255 means file does not exist.  Good!
@@ -500,6 +579,7 @@ typbox:
         mvi     d,5             ; line 5
         mvi     e,16            ; column 16
         mvi     a,4             ; 3 blank lines
+        lxi     h,tptitle       ; point to title for this flower box
         call    flower          ; draw a flower box
         mvi     d,7             ; line 7
         mvi     e,26            ; column 26
@@ -662,6 +742,7 @@ renbox:
         mvi     d,5             ; line 5
         mvi     e,16            ; column 16
         mvi     a,4             ; 3 blank lines
+        lxi     h,rntitle       ; point to title for this box
         call    flower          ; draw a flower box
         mvi     d,7             ; line 7
         mvi     e,26            ; column 26
@@ -684,6 +765,7 @@ ren2:
         mvi     d,5             ; line 5
         mvi     e,16            ; column 16
         mvi     a,6             ; 5 blank lines
+        lxi     h,0             ; no title
         call    flower          ; draw a flower box
         mvi     d,7             ; line 7
         mvi     e,29            ; column 29
@@ -743,7 +825,8 @@ renfl:
         call    perr            ; display error message
         jmp     ren1            ; go try again
 
-mvua:                           ; move a file to another user area
+        ; copy a file to another user area
+mvua:                           ; copy a file to another user area
         cpi     'M'             ; User wants to move?
         jnz     uihelp          ; nope, go to help
         call    cnttags         ; get count of tagged files
@@ -756,6 +839,7 @@ mvua1:                          ; get target user area
         mvi     d,5             ; line 5
         mvi     e,16            ; column 16
         mvi     a,4             ; 3 blank lines
+        lxi     h,mvtitle       ; point to title for box
         call    flower          ; draw a flower box
         mvi     d,7             ; line 7
         mvi     e,24            ; column 24
@@ -843,6 +927,7 @@ uilog1:
         mvi     d,5             ; line 5
         mvi     e,16            ; column 16
         mvi     a,4             ; 3 blank lines
+        lxi     h,cdtitle       ; point to title for box
         call    flower          ; draw a flower box
         mvi     d,7             ; line 7
         mvi     e,26            ; column 26
@@ -879,17 +964,24 @@ uilog2:
         call    perr            ; display it
         jmp     usrlp0          ; go back and re-read current disk
 
-        ; Print disk statistics
+        ; Print disk statistics.  Some of this info was gathered earlier
+        ; when the current disk was selected, some is updated here
 uistats:
         cpi     'I'             ; User wants disk info
-        jnz     uiexit          ; nope, go to exit
+        jnz     uifltr          ; nope, go to set search filter
+        mvi     c,getdsk        ; get current drive
+        call    sys             ; get drive number into A
+        adi     'A'             ; offset into ASCII
+        lxi     h,statln1+25    ; position in title where drive char lives
+        mov     m,a             ; put drive letter there
+        lxi     h,statln1       ; point to title for box
         mvi     d,5             ; line 5
         mvi     e,16            ; column 16
-        mvi     a,9             ; 8 blank lines
+        mvi     a,10            ; 9 blank lines
         call    flower          ; draw a flower box
-        mvi     d,13            ; line 13
+        mvi     d,14            ; line 14
         mvi     e,36            ; column 36
-        call    setcur          ; put cursor at 13,36
+        call    setcur          ; put cursor at 14,36
         lxi     d,uibold        ; set bold
         mvi     c,strout        ; send it to term
         call    sys             ; syscall
@@ -899,19 +991,6 @@ uistats:
         lxi     d,uireset       ; clear bold attribute
         mvi     c,strout        ; send it out
         call    sys             ; syscall
-        mvi     d,6             ; line 6
-        mvi     e,30            ; column 30
-        call    setcur          ; cursor move
-        lxi     d,statln1       ; header
-        mvi     c,strout        ; print string
-        call    sys             ; syscall
-        mvi     d,6             ; still on line 6
-        mvi     e,52            ; replace "X" with drive letter
-        call    setcur          ; put curser in spot
-        mvi     c,getdsk        ; get current drive
-        call    sys             ; get drive number into A
-        adi     'A'             ; offset into ASCII
-        call    pchar           ; print drive letter
         mvi     d,7             ; now line 7
         mvi     e,31            ; column 31
         call    setcur          ; put cursor there
@@ -970,26 +1049,111 @@ uistat3:
         call    prn16           ; and print it
         mvi     d,12            ; line 12
         mvi     e,23            ; column 23
-        call    setcur          ; put cursor at 12,23
+        call    setcur          ; put cursor at 11,23
         lxi     d,statln7       ; used dir entries message
         mvi     c,strout        ; print str func
         call    sys             ; print it
         call    cntdirs         ; go count used directory entries
         call    prn16           ; result was in H/L, print it
-        mvi     d,13            ; line 13
-        mvi     e,26            ; column 26
-        call    setcur          ; put cursor at 13,26
+        mvi     d,14            ; line 14
+        mvi     e,21            ; column 21
+        call    setcur          ; put cursor at 14,21
         lxi     d,uibold        ; bold text
         mvi     c,strout        ; make it so
         call    sys             ; syscall
-        lxi     d,contmsg       ; press any key text
+        lxi     d,cntmsg        ; press d for details, any key text
         mvi     c,strout        ; print func
         call    sys             ; syscall
         lxi     d,uireset       ; clear bold attribute
         mvi     c,strout        ; print
         call    sys             ; syscall
         call    cin2uppr        ; wait for input
+        cpi     'D'             ; check for a "D"
+        jnz     usrlp0          ; go back for redraw
+        lxi     h,statln8       ; point to title for box
+        mvi     d,3             ; line 3
+        mvi     e,16            ; column 16
+        mvi     a,19            ; 198 blank lines
+        call    flower          ; draw a flower box
+        mvi     a,0             ; zero A
+        sta     trgtua          ; save it
+uistat4:                        ; loop through user areas
+        lda     trgtua          ; get this user area
+        adi     5               ; add five for line number
+        mov     d,a             ; that's the line number
+        mvi     e,34            ; column 34
+        cpi     15              ; is this UA 9 or less?
+        jm      uistat5         ; no
+        dcr     e               ; move left one column for double-digit
+uistat5:
+        call    setcur          ; put cursor there
+        lxi     d,statln9       ; "User Area" text
+        mvi     c,strout        ; print func
+        call    sys             ; syscall
+        lda     trgtua          ; get this user area again
+        mov     l,a             ; move it to L for next subroutine
+        call    prn8            ; print it
+        mvi     a,':'           ; colon
+        call    pchar           ; print it
+        mvi     a,' '           ; space
+        call    pchar           ; print it
+        lda     trgtua          ; get current UA again
+        ral                     ; multiply by 2
+        mvi     d,0             ; move that to D/E
+        mov     e,a             ; move ua*2 to D/E
+        lxi     h,uacnt         ; get pointer to UA count array
+        dad     d               ; increment by current UA
+        mov     d,m             ; get low byte
+        inx     h               ; point to high byte
+        mov     e,m             ; get high byte
+        xchg                    ; swap H/L <--> D/E
+        call    prn16           ; print count
+        lda     trgtua          ; get the current UA again
+        inr     a               ; increment to next
+        sta     trgtua          ; save it
+        cpi     16              ; are we through all of them?
+        jm      uistat4         ; go back for next
+        mvi     d,22            ; line 20
+        mvi     e,28            ; column 28
+        call    setcur          ; put cursor there
+        lxi     d,uibold        ; set bold attribute
+        mvi     c,strout        ; send to terminal
+        call    sys             ; syscall
+        lxi     d,contmsg       ; "Press any key"... message
+        mvi     c,strout        ; print msg
+        call    sys             ; syscall
+        lxi     d,uireset       ; clear bold attribute
+        mvi     c,strout        ; send to terminal
+        call    sys             ; syscall
+        call    cin2uppr        ; wait for input
         jmp     usrlp0          ; go back for complete redraw
+
+        ; set file search filter
+uifltr:
+        cpi     'F'             ; User wants disk info
+        jnz     uiexit          ; nope, go to exit
+        mvi     d,5             ; line 5
+        mvi     e,16            ; column 16
+        mvi     a,4             ; 3 blank lines
+        lxi     h,sftitle       ; point to title
+        call    flower          ; draw a flower box
+        call    sys             ; syscall
+        mvi     d,7             ; line 7
+        mvi     e,27            ; column 27
+        call    setcur          ; put cursor there
+        lxi     d,setflt1       ; 'current filter' msg
+        mvi     c,strout        ; print string
+        call    sys             ; syscall
+        call    prnfltr         ; print current filter
+        mvi     d,8             ; next line
+        mvi     e,31            ; column 31
+        call    setcur          ; put cursor there
+        lxi     d,setflt2       ; 'new filter' msg
+        mvi     c,strout        ; print
+        call    sys             ; syscall
+        call    getfltr         ; get new filter from user
+        jmp     usrlp0          ; complete reload/redraw
+
 
         ; go back to CP/M.
 uiexit:
@@ -1002,6 +1166,7 @@ uiexit:
 ; restore original stack pointer, etc.
 ;*************************************************
 cleanup:
+        call    CRLF            ; do a newline to get a fresh line
         lhld    orgstk          ; load original stack pointer to H/L pair
         sphl                    ; set stack pointer from H/L pair
         ret                     ; back to CCP, end of program
@@ -1139,6 +1304,18 @@ help:
         mvi     c,strout        ; display string
         call    sys             ; syscall
         call    cin2uppr        ; pause for input
+
+        call    cls             ; clear screen
+        lxi     d,helpttl       ; help title
+        mvi     c,strout        ; display string
+        call    sys             ; syscall
+        lxi     d,hlpflt        ; help using filters
+        mvi     c,strout        ; display string
+        call    sys             ; syscall
+        lxi     d,contmsg       ; continue message
+        mvi     c,strout        ; display string
+        call    sys             ; syscall
+        call    cin2uppr        ; pause for input
         ret                     ;
 
 ;
@@ -1186,6 +1363,12 @@ chkdsk1:
 chkdsk2:                        ; DPH (Disk Parameter Header) address is in H/L
         lxi     d,0ah           ; add 0x0a to address of DPH
         dad     d               ; that is address of DPB (Disk Parameter Block)
+        lda     cpmver          ; get CP/M version
+        cpi     022h            ; is it version 2.2?
+        jz      chkdsk2a        ; it is, no adjustment needed
+        lxi     d,02h           ; in CP/M 3, the address of the DPB is at 0x0c
+        dad     h               ; so, increment pointer by 2 to account for that
+chkdsk2a:
         xchg                    ; put that from H/L to D/E
         ldax    d               ; get byte at that address
         mov     l,a             ; that is the low byte of address of DPB
@@ -1218,6 +1401,7 @@ chkdsk2:                        ; DPH (Disk Parameter Header) address is in H/L
         inx     h               ; value is max-1, add 1 to get correct value
         shld    DRM             ; save it, 16-bit value for max directory entries
         lda     BSH             ; get shift count
+        lhld    BCNT            ; reload block count into H/L
         mov     b,a             ; save it in B
         cpi     0               ; initial test for zero
 chkdsk3:                        ; multipy block count by block shift count
@@ -1244,6 +1428,10 @@ chkdsk4:
 ;       H/L - total directory entries used (16-bit)
 ;
 cntdirs:
+        lxi     h,uacnt         ; point to array of files per user area
+        lxi     d,32            ; 32 bytes long
+        mvi     b,0             ; zero out all 32 bytes of the array
+        call    memset          ; go do the setting
         lxi     h,0             ; zero H/L
         shld    dircnt          ; store it; zero used directories at this point
         mvi     c,guser         ; syscall to get/set current User Area
@@ -1270,8 +1458,9 @@ cntdir1:                        ; outer outer loop - iterating through user area
         cpi     0ffh            ; compare to 0xff - no file found
         jz      cntdir3         ; no files, go check next user area
         lhld    dircnt          ; get current directory count
-        inx     h               ; incrment it...
+        inx     h               ; increment it...
         shld    dircnt          ; ...and save
+        call    incfcnt         ; increment count for this user area
 cntdir2:                        ; inner loop - checking for additional files
         mvi     c,srchn         ; check next file function
         call    sys             ; syscall
@@ -1280,6 +1469,7 @@ cntdir2:                        ; inner loop - checking for additional files
         lhld    dircnt          ; get current directory count
         inx     h               ; incrment it...
         shld    dircnt          ; ...and save
+        call    incfcnt         ; increment for this user area
         jmp     cntdir2         ; try for more!
 cntdir3:                        ; check if we have another ua to check
         lda     trgtua          ; get last scanned user area
@@ -1297,8 +1487,53 @@ cntdrdn:
         ret                     ; and return that to caller in H/L
 
 ;
+; incfcnt
+; Increment file count for a user area
+;
+incfcnt:
+        push    b               ;
+        push    d               ;
+        push    h               ;
+        lda     trgtua          ; get the current user area
+        ral                     ; multipy by 2
+        mvi     d,0             ; set D/E to
+        mov     e,a             ; shifted user area number
+        lxi     h,uacnt         ; get pointer to member 0 of the array
+        dad     d               ; offset by index, H/L points to desired member of array
+        mov     a,m             ; get low byte
+        adi     1               ; add 1 to that
+        mov     m,a             ; store that back as the low byte
+        jnc     incfret         ; no carry, go to restore stack and return
+        inx     h               ; increment to high byte
+        mov     a,m             ; get that byte
+        adi     1               ; add the carry
+incfret:
+        pop     h               ;
+        pop     d               ;
+        pop     b               ;
+        ret
+
+
+;
 ; calcdsk
-; Calculate used space
+; Calculate used space.  This is done by loading a pointer to the
+; Allocation Vector.  The AV is an array of bytes, one bit for each
+; block on the disk.  Bit=1 means block in use.  We need to iterate
+; over all of the bytes in the array and count bits set to one.
+;
+; This subroutine is using all 3 16-bit register pairs and the accumulator:
+;       A   -> used to do logical AND to check each bit
+;       B/C -> count of used blocks
+;       D/E -> pointer to current byte in array
+;       H/L -> array index counter
+;
+; Because of this, the inner loop is unwound in the routine.  This seems
+; counter to computer science (talking about the loop of shifting A
+; 8 times to check each bit in the current byte).  But, if we made that a
+; loop, we'd have to write one of the register pair out to RAM (either a
+; variable or onto the stack) each iteration of the loop.  RAM is slow,
+; and this routine is slow enough, so it's actually more efficient to
+; make the program a bit larger by unwinding the loop.
 ;
 calcdsk:
         mvi     c,alloc         ; BDOS syscall to get allocation vector
@@ -1499,6 +1734,105 @@ ginpok:                         ; return with success
         lxi     d,fcb2          ; good return with D pointing to our FCB
 ginpret:
         ret                     ;
+
+;
+; getfltr
+; Get file search filter from user
+;
+getfltr:
+        mvi     b,11            ; 8+3 in filename + extension/type
+        lxi     h,sfilter       ; point to filter
+gtfltrc:                        ; initially clear filter (set to all '?')
+        mvi     a,'?'           ; wildcard
+        mov     m,a             ; put it into filter
+        inx     h               ; next char
+        dcr     b               ; decrement count, sets Z flag
+        jnz     gtfltrc         ; go do next char
+        mvi     b,0             ; byte to input full buffer with
+        lxi     d,uinplen       ; input buffer length
+        lxi     h,usrinp        ; input buffer start address
+        call    memset          ; set input buffer to be fulla nulls
+        mvi     m,uinplen       ; first byte of buffer is length for CP/M
+        xchg                    ; swap H/L with D/E, syscall expects buffer there
+        mvi     c,rdcbuf        ; function to read console bufffer
+        call    sys             ; perform the syscall
+        lxi     h,usrinp+1      ; point to number of entered chars (post editing)
+        mov     a,m             ; get entered char count
+        ora     a               ; if zero, then filter is going to be default
+        rz                      ; user didn't enter anything, just return
+        cpi     13              ; is it more than 12? (include space for dot separator)
+        jm      gtfltr1         ; no, it's OK there
+        lxi     d,flterr        ; error message
+        call    perr            ; print error message
+        ret                     ; return with filter set to default after error message
+gtfltr1:
+        lxi     h,usrinp+1      ; point to number of entered chars (post editing)
+        mov     e,m             ; move that to E
+        inr     e               ; for first test
+gtfltr2:                        ; convert to all upper case
+        inx     h               ; next char
+        dcr     e               ; decrement count
+        jz      gtfltr3         ; go start validation
+        mov     a,m             ; drop char into A
+        cpi     'a'             ; is char greater or equal to lowercase a?
+        jm      gtfltr2         ; less than lower case a, go try next char
+        cpi     'z'+1           ; is char greater than lowercase z?
+        jp      gtfltr2         ; sure it, try next char
+        ani     0dfh            ; mask off bit 5 (that's the difference between A and a, etc)
+        mov     m,a             ; put case changed char back into buffer
+        jmp     gtfltr2         ; next char
+gtfltr3:                        ; validate user entry loop
+        lxi     h,usrinp+1      ; point to number of entered chars (post editing)
+        mov     b,m             ; move that to B, we already know it is > 0
+        inx     h               ; first char of entry
+gtfltr4:
+        mov     a,m             ; get next char
+        cpi     '?'             ; wildcard is OK
+        jz      gtfltr4a        ; next char
+        cpi     '.'             ; separator is OK
+        jz      gtfltr4a        ; next char
+        cpi     'Z'+1           ; can't be greater than "Z"
+        jp      filterr         ; return error
+        cpi     'A'             ; compare to "A"
+        jp      gtfltr4a        ; between "A" and "Z" is OK
+        cpi     '9'+1           ; can't be between "9" and "A"
+        jp      filterr         ; so that would be an error
+        cpi     '0'             ; can't be less than zero (sorry, B.E.E.)
+        jm      filterr         ; error
+gtfltr4a:                       ; next validation char
+        inx     h               ; increment pointer
+        dcr     b               ; decrement count
+        jnz     gtfltr4         ; more to check
+        lxi     d,sfilter       ; point to search filter
+        lxi     h,usrinp+1      ; point to number of entered chars (post editing)
+        mov     b,m             ; move that to B, we already know it is > 0
+        inx     h               ; first char of entry
+gtfltr5:                        ; copy input to filter loop
+        mov     a,m             ; get input char
+        cpi     '.'             ; was it a period (dot separator)
+        jnz     gtfltr6         ; nope
+        inx     h               ; skip to next input char
+        lxi     d,sfilter+8     ; jump right to the extension/type section of filter
+        mov     a,b             ; get remainig count of chars to A
+        cpi     3               ; can't be more than 3 remaining chars for extension/type
+        jm      gtfltr7         ; yup, we're ok
+        mvi     b,4             ; ugh, just take the next 3 chars
+        jmp     gtfltr7         ; skip down to counter decrement
+gtfltr6:                        ; actual count happens here
+        inx     h               ; increment to next input char
+        xchg                    ; swap H/L with D/E, now H/L now points to filter string
+        mov     m,a             ; put user char into filter
+        inx     h               ; increment filter pointer
+        xchg                    ; swap H/L with D/E again, H/L points to user input again
+gtfltr7:
+        dcr     b               ; decrement count, sets Z flag
+        jnz     gtfltr5         ; next char (if any)
+        ret                     ; new filter is set - go back to reload
+filterr:
+        lxi     d,flterr        ; error message pointer
+        call    perr            ; print error message
+        ret                     ;
+
 
 ;
 ; cpyfile
@@ -1878,51 +2212,92 @@ b2asc4:
 ;       A - number of rows + 1
 ;       D - start line
 ;       E - start col
+;       H/L - pointer to title
 flower:
-        dcr     e               ; decrement column by one
-        push    psw             ;
-        push    b               ;
-        push    d               ;
-        push    h               ;
-        sta     flwrtmp         ; save line count
+        push    psw             ; A=SP+7, PWS=SP+6
+        push    b               ; B=SP+5, C=SP+4
+        push    d               ; D=SP+3, E=SP+2
+        push    h               ; H=SP+1, L=SP
+        sta     flwrcnt         ; save line count
+        dcr     e               ; decrement starting column
+        lxi     h,flwrcol       ; point to column variable
+        mov     m,e             ; save column
+        lxi     h,flwrlin       ; point to line variable
+        mov     m,d             ; save current line
+        lxi     h,flwrorg       ; original line nubmer (used for title later)
+        mov     m,d             ; save it
+        dcr     d               ; decrement line by one
+        call    setcur          ; move cursor to one line above
+        lxi     d,flowr0        ; blank line, makes title look better
+        mvi     c,strout        ; print it
+        call    sys             ; syscall
+        lxi     d,uibold        ; set bold attribute
+        mvi     c,strout        ; send to terminal
+        call    sys             ; syscall
+        lxi     h,flwrlin       ; point to line
+        mov     d,m             ; pull from mem to D
+        lxi     h,flwrcol       ; point to column
+        mov     e,m             ; pull from mem to E
         call    setcur          ; put cursor at top left
         lxi     d,flowr1        ; print top line
         mvi     c,strout        ; print call
         call    sys             ; go print it
-        lda     flwrtmp         ; retrieve line count
-        cpi     0               ; initial check
-flwr1:
-        jz      flwr2           ; draw bottom line
-        lxi     h,3             ; H/L to 3 (position where D was pushed)
-        dad     sp              ; point to "pushed D"
-        mov     d,m             ; get original D (line number)
-        inr     d               ; increment
-        mov     m,d             ; save it (on stack)
-        dcx     h               ; E was pushed on stack one byte later (lower in RAM)
-        mov     e,m             ; put it back to E
+flwr1:                          ; draw interior lines
+        lxi     h,flwrlin       ; point to line
+        inr     m               ; increment it
+        mov     d,m             ; pull from mem to D
+        lxi     h,flwrcol       ; point to column
+        mov     e,m             ; pull from mem to E
         call    setcur          ; put cursor there
         lxi     d,flowr2        ; blank row in flowerbox
         mvi     c,strout        ; print that
         call    sys             ; let CP/M print it
-        lda     flwrtmp         ; get count back
+        lda     flwrcnt         ; get count back
         dcr     a               ; another line?
-        sta     flwrtmp         ; save updated line count
-        jnz     flwr1           ;
-flwr2:
-        lxi     h,3             ; H/L to 3 (position where D was pushed)
-        dad     sp              ; point to "pushed D"
-        mov     d,m             ; get original D (line number)
-        dcx     h               ; E was pushed on stack one byte later (lower in RAM)
-        mov     e,m             ; put it back to E
+        sta     flwrcnt         ; save updated line count
+        jnz     flwr1           ; jump back and print next interior line
+        lxi     h,flwrlin       ; point to line
+        inr     m               ; increment it
+        mov     d,m             ; pull from mem to D
+        lxi     h,flwrcol       ; point to column
+        mov     e,m             ; pull from mem to E
         call    setcur          ; put cursor there
         lxi     d,flowr1        ; bottom line
         mvi     c,strout        ; print func
         call    sys             ; print it
-        pop     h               ;
-        pop     d               ;
+        pop     h               ; get original H/L from stack
+        mov     a,h             ; need to check H/L
+        ora     l               ; to see if zero, if so, return now
+        jz      flwret          ; get outta here
+        push    h               ; put H/L back, too.  Gotta keep that stack straight
+        mov     a,m             ; get centering value for title
+        sta     flwcent         ; store it to ram for now
+        lda     flowrwd         ; get half the width of the flower box
+        lxi     h,flwrcol       ; point to starting column
+        add     m               ; add that to A, A now holds column at middle of box
+        mov     c,a             ; store that to C for now
+        lda     flwcent         ; get the offset for this instance's title string
+        mov     b,a             ; stash that in  B
+        mov     a,c             ; get center of box back into A
+        sub     b               ; offset left half width of title string to center it
+        pop     d               ; get original D/E from stack
+        push    d               ; put it back for now
+        mov     e,a             ; A has starting column for title, put into E
+        lxi     h,flwrorg       ; original line nubmer (used for title later)
+        mov     d,m             ; get it
+        call    setcur          ; put cursor there; this should center next
+        pop     h               ; get H/L one last time
+        inx     h               ; move past the first byte, which was title witdh / 2
+        xchg                    ; put that into D/E for print string syscall
+        mvi     c,strout        ; print string func
+        call    sys             ; syscall
+        lxi     d,uireset       ; clear bold attribute
+        mvi     c,strout        ; send to terminal
+        call    sys             ; syscall
+flwret:
+        pop     d               ; (remember, H was popped above, don't pop again)
         pop     b               ;
         pop     psw             ;
-        inr     e               ; restore column position
         ret
 
 ;
@@ -2262,6 +2637,7 @@ perr:
         mvi     d,5             ; line 5
         mvi     e,16            ; column 17
         mvi     a,5             ; 4 blank lines
+        lxi     h,ertitle       ; point to title
         call    flower          ; draw a flower box
         mvi     d,7             ; line 7
         mvi     e,24            ; column 24
@@ -2522,6 +2898,10 @@ first:
         lxi     h,fcb1          ; set H/L to file control block (dst)
         lxi     b,fcblen        ; length of one fcb
         call    memcpy          ; copy search value to FCB1
+        lxi     d,sfilter       ; get the filter
+        lxi     h,fcb1+1        ; start of filename part of FCB
+        lxi     b,fnlen         ; length of filename (length of filter, too)
+        call    memcpy          ; copy that in
         mvi     c,getdsk        ; get currently logged-in disk
         call    sys             ; syscall
         inr     a               ; drive A=1, etc.
@@ -2627,6 +3007,7 @@ enumful:
         mvi     d,5             ; line 5
         mvi     e,16            ; column 16
         mvi     a,4             ; 3 blank lines
+        lxi     h,0             ; no title
         call    flower          ; draw a flower box
         mvi     d,7             ; line 7
         mvi     e,20            ; column 20
@@ -2717,6 +3098,34 @@ prnnm4:
         pop     b
         pop     psw
         ret
+
+;
+; prnfltr
+; print current file search filter in
+; the format NNNNNNNN.TTT
+; Will print at the current location
+;
+prnfltr:
+        lxi     h,sfilter       ; point to file search filter
+        mvi     b,8             ; set B to 8 characters
+pflt1:                          ; print out the "name" part
+        mov     a,m             ; get current char
+        call    pchar           ; print it
+        inx     h               ; next char
+        dcr     b               ; decrement count, sets Z flag
+        jnz     pflt1           ; next char
+        mvi     a,'.'           ; separator
+        call    pchar           ; print
+        mvi     b,3             ; 3 chars in ext/type
+pflt2:                          ; print out the type/extension
+        mov     a,m             ; get current
+        call    pchar           ; print it
+        inx     h               ; next char
+        dcr     b               ; decrement count, sets Z flag
+        jnz     pflt2           ; keep 'er moving
+        ret                     ;
+
+
 
 ;
 ; fndisp
@@ -2818,18 +3227,25 @@ prnui:
         lxi     d,fndstr3       ; ' tagged files' message
         mvi     c,strout        ; print string
         call    sys             ; print it
-        mvi     d,20            ; go to line 20
+        mvi     d,uiline        ; go to line for top UI
         mvi     e,1             ; column 1
         call    rstline         ; clear line
         lxi     d,uistr1        ; "Current file..." message
         mvi     c,strout        ; string out syscall
         call    sys             ; make the syscall
-        mvi     d,21            ; go to line 21
+        mvi     d,uiline+1      ; go to second UI line
         mvi     e,1             ; column 1
         call    rstline         ; clear line
         lxi     d,uistr2        ; second UI line
         mvi     c,strout        ; print string
         call    sys             ; let cpm print it
+        mvi     d,uiline+2      ; third UI line
+        mvi     e,1             ; first column
+        call    setcur          ; put cursor there
+        lxi     d,uistr3        ; 'filter' line
+        mvi     c,strout        ; print func
+        call    sys             ; syscall
+        call    prnfltr         ; print current search filter
         pop     h               ;
         pop     d               ;
         pop     b               ;
@@ -2870,13 +3286,13 @@ prnui2:
         lxi     d,fndstr4       ; "tagged"... message
         mvi     c,strout        ; print string
         call    sys             ; syscall
-        mvi     d,20            ; line 20
+        mvi     d,uiline        ; go to first UI line
         mvi     e,32            ; column 32 (just after selection tools)
         call    setcur          ; put cursor there
         lxi     d,uiclnln       ; clear from here to end of line
         mvi     c,strout        ; send to terminal
         call    sys             ; syscall to do that
-        mvi     d,20            ; line 20
+        mvi     d,uiline        ; go to first UI line
         mvi     e,32            ; column 32 (just after selection tools)
         call    setcur          ; put cursor there
         lxi     d,uibold        ; set bold font
@@ -2895,13 +3311,13 @@ prnui4:
         lxi     d,uireset       ; clear formatting
         mvi     c,strout        ; print
         call    sys             ; print it
-        mvi     d,21            ; line 21
+        mvi     d,uiline+1      ; go to second UI line
         mvi     e,35            ; column 35 (this will clear previous command entry)
         call    setcur          ; put cursor there
         lxi     d,uiclnln       ; sequence to clear to end of line
         mvi     c,strout        ; send to terminal
         call    sys             ; syscall
-        mvi     d,21            ; line 21
+        mvi     d,uiline+1      ; go to second UI line
         mvi     e,36            ; column 36 (location for command entry)
         call    setcur          ; put cursor there
         pop     h               ;
@@ -2915,10 +3331,15 @@ prnui4:
 ;***************************************************
 canary  db      0beh,0efh,0cah,0feh
 errcan  db      'ERROR - Stack is corrupt!',CR,LF,'$'
+vlowerr db      'ERROR - Must be running CP/M version 2.2 or later :( $'
+vhierr  db      'WARNING - CP/M is newer than v2.2$'
+vhierr2 db      '      disk info may be wrong$'
+flowr0  db      '                                                      $'
 flowr1  db      ' +--------------------------------------------------+ $'
 flowr2  db      ' |                                                  | $'
+flowrwd db      27
 stemver db      'STEM $'
-vernum  db      '(v0.9.8)$'
+vernum  db      '(v1.0.0)$'
 welcom1 db      'An Altair 8800 File Manager$'
 welcom2 db      '2026 Mattydyne Heavy Industries$'
 welcom3 db      01bh,'[1m"H" for help, any other key to start',01bh,'[0m',CR,LF,'$'
@@ -2934,7 +3355,8 @@ uirevrs db      01bh,'[7m$'
 uireset db      01bh,'[0m$'
 uiclnln db      '                                  $'
 uistr1  db      'Selected file (N/P/U/<Space>): $'
-uistr2  db      'Command (D/C/T/R/M/L/I/X, H-help)? $'
+uistr2  db      'Command (D/C/T/R/M/L/I/F/X, H-help)? $'
+uistr3  db      'Current file search filter: $'
 delser  db      'Tag one or more files for deletion!$'
 cpyser  db      '   Tag one or more files to copy!$'
 renser  db      '  Tag one or more files to rename!$'
@@ -2947,12 +3369,14 @@ render  db      '        UNABLE TO RENAME FILE!$'
 badfnm  db      '          BAD FILE NAME$'
 logerr  db      '     DISK x: IS NOT AVAILABLE!$'
 mvuaer1 db      '  SELECT A DIFFERENT USER AREA!$'
+cpyer2  db      ' DESTINATION DRIVE NOT AVAILABLE!$'
 cpyok   db      ' blocks copied.$'
 mvuaok  db      ' blocks copied to user area $'
 typhdr  db      'Displaying file $'
 typftr  db      'Press <SPACE> to continue, any other to exit$'
 typend  db      'End of file, any key to continue$'
 contmsg db      'Press any key to continue$'
+cntmsg  db      'Press D for details, any other to continue$'
 delmsg  db      'Delete file $'
 cpymsg1 db      'Copy file $'
 renmsg1 db      'Rename file $'
@@ -2966,14 +3390,29 @@ logmsg  db      'Select new disk letter: $'
 usrcmsg db      'Select new user area (0-15): $'
 mvuamsg db      'Select target user area (0-15): $'
 calcing db      'Calculating...$'
-statln1 db      'Information for drive X:$'
+uatitle db      10,'[ Switch User Area ]$'
+dltitle db      7,'[ Delete File ]$'
+cptitle db      6,'[ Copy File ]$'
+tptitle db      8,'[ Display File ]$'
+rntitle db      7,'[ Rename File ]$'
+mvtitle db      13,'[ Copy File to User Area ]$'
+cdtitle db      8,'[ Switch Drive ]$'
+sftitle db      10,'[ Set Search Filter ]$'
+ertitle db      4,'[ ERROR ]$'
+statln1 db      14,'[ Information for drive X: ]$'
 statln2 db      'Capacity: $'
 statln3 db      'Used: $'
 statln4 db      'Blocks: $'
 statln5 db      'KB/Block: $'
 statln6 db      'Max dir entries: $'
 statln7 db      'Used dir entries: $'
+statln8 db      12,'[ Files per User Area ]$'
+statln9 db      'User Area $'
 statkb  db      ' KBytes$'
+setflt1 db      'Current filter: $'
+setflt2 db      'New filter: $'
+flterr  db      'Bad filter; must be 8.3, A-Z, 0-9, or ?$'
+sfilter db      '???????????'
 schfcb  db      0,'???????????',0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0
 blnkfcb db      0,'           ',0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0
 mworkng db      'Enumerating files in drive $'
@@ -2982,10 +3421,11 @@ helpver db      '                        Version $'
 hlpusng db      'When started, the screen is divided into 3 horizontal sections:',CR,LF
         db      '+ Top line - this shows which drive is currently being read,',CR,LF
         db      '  how many files are on the drive, and how many are tagged.',CR,LF
-        db      '+ Middle section is a list of all files on the drive.  Each',CR,LF
-        db      '  filename is preceded with "[ ]" to show tag status.  For',CR,LF
-        db      '  example: [ ]STEM.COM',CR,LF
-        db      '+ Bottom 2 lines show the currently selected file and commands.',CR,LF
+        db      '+ Middle section is a list of all files on the drive that',CR,LF
+        db      '  match the current search filter.  Each filename is preceded',CR,LF
+        db      '   with "[ ]" to show tag status.  For example: [ ]STEM.COM',CR,LF
+        db      '+ Bottom 3 lines show the currently selected file, available',CR,LF
+        db      '  commands, and search filter.',CR,LF
         db      '  If supported by terminal, selected filename is in bold.',CR,LF
         db      CR,LF,'Using STEM',CR,LF
         db      '+ All operations are performed on tagged files.  To tag a',CR,LF
@@ -3011,7 +3451,8 @@ hlpcmds db      '+ Commands:',CR,LF,CR,LF
         db      '    prompted for a new name for each file.',CR,LF
         db      '  + M - this will copy all tagged files to another user area',CR,LF
         db      '  + L - "log into" a new disk and show files on that disk',CR,LF
-        db      '  + I - display drive info - capacity, usage, geometry',CR,LF,CR,LF,'$'
+        db      '  + I - display drive info - capacity, usage, geometry',CR,LF
+        db      '  + F - change file search filter',CR,LF,CR,LF,'$'
 hlpshrt db      ' Short command help:',CR,LF
         db      ' D - delete one or more files',CR,LF
         db      ' C - copy one or more files',CR,LF
@@ -3020,28 +3461,46 @@ hlpshrt db      ' Short command help:',CR,LF
         db      ' M - copy file to another user area',CR,LF
         db      ' L - change disk drive',CR,LF
         db      ' I - display drive info',CR,LF
+        db      ' F - set file search filter',CR,LF
         db      ' X - Exit the program',CR,LF,CR,LF
         db      ' Short navigation help:',CR,LF
         db      ' N - select next file (wraps around end to beginning)',CR,LF
         db      ' P - select previous file (wraps around beginning to end)',CR,LF
         db      ' U - change User Area',CR,LF,CR,LF,'$'
         db      ' <SPACE> - tag/untag toggle of selected file$'
+hlpflt  db      'Notes about using file search filter',CR,LF,CR,LF
+        db      'The file search filter will limit the files returned in'
+        db      ' the list.',CR,LF
+        db      'The only wildcard character allowed is "?", which is used to',CR,LF
+        db      'replace one character in filename.',CR,LF,CR,LF
+        db      'The default filter is "????????.???", which will search for all',CR,LF
+        db      'files in the current user area of the logged-in disk.',CR,LF,CR,LF
+        db      'Setting the search filter:',CR,LF
+        db      '+ Entering an empty filter restores the default filter',CR,LF
+        db      '+ Examples:',CR,LF
+        db      '  + "S.TXT" -> search for all files that start with "S" and'
+        db      CR,LF,'    have an type/extension of "TXT"',CR,LF
+        db      '  + ".COM" -> search for all files with "COM" type/extension'
+        db      CR,LF,'  + "??EM" -> search for all files with "EM" as the 3rd and'
+        db      CR,LF,'    4th character, and have any type/extension',CR,LF,CR,LF,'$'
 
 ;***************************************************
 ; START OF VARIABLE DATA AREA
 ;***************************************************
 orgstk  ds      2               ; original stack pointer
 dpbase  ds      2               ; Disk Parameter Base address
-cinst   ds      1               ; call instruction
-addr    ds      2               ; address of get translation table
-cret    ds      1               ; return instruction
+cpmver  ds      1               ; CP/M version
 usrfnm  ds      fnlen+1         ; user entered filename buffer
 fcb2    ds      fcblen+1        ; another FCB for file operations
 allflag ds      1               ; flag to indicate "ALL" files
 eofflag ds      1               ; last read was EOF
 fcount  ds      1               ; file count addr
 flsel   ds      1               ; selected file number
-flwrtmp ds      1               ; temporary storage for flower box
+flwrcnt ds      1               ; flower box line count
+flwrcol ds      1               ; flower box starting column
+flwrlin ds      1               ; flower box line number
+flwrorg ds      1               ; flower box original line number
+flwcent ds      1               ; flower box offset to center title
 drvtmp  ds      1               ; drive letter storage during drive change
 entlim  ds      1               ; entry limit value (for 1 byte entry)
 enttmp  ds      1               ; temp entry value
@@ -3065,6 +3524,7 @@ flposn  ds      2               ; position in file name array
 flist   ds      (maxfls*fnlen)+1; area for list of filenames
 tags    ds      tagcnt          ; bitmap of tagged files
 esctmp  ds      24              ; temp area for building escape sequences
+uacnt   ds      32              ; count of files in each user area (2 bytes*16 UAs)
 stkcny  ds      4               ; stack canary
 usrstk  ds      64              ; 32 level stack
 newstk                          ; top of newstk area
