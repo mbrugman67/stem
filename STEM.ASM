@@ -131,6 +131,10 @@ uiline  equ     22              ; line number for UI stuffs to begin
 ; .org 100h - TPA area starts at 0x0100
 ;****************************************************
         org     0100h           ; entry point at 100 hex (TPA area)
+        mvi     c,version       ; need to get CP/M version
+        call    sys             ; syscall; Machine type in H, version in L
+        mov     a,l             ; get version number
+        sta     cpmver          ; save that to RAM for later
         lxi     d,canary        ; point to fixed canary value
         lxi     h,stkcny        ; point to last 4 bytes under stack
         lxi     b,4             ; 4 bytes of stack canary
@@ -180,9 +184,54 @@ uiline  equ     22              ; line number for UI stuffs to begin
         call    sys             ; call the system function to print string
         call    cin2uppr        ; get input
         cpi     'H'             ; did user hit "H"?
-        jnz     usrlp0          ; nope
+        jnz     verchk          ; nope, go check version
         call    help            ; show help
 
+        ; if the machine is running a version of CP/M other than 2.2, we need
+        ; to do some stuffs.  Less than 2.2 and this won't work, just exit.
+        ; Greater than 2.2 and it *should* work, but I haven't tested, so
+        ; just give a warning to user.
+verchk:
+        lda     cpmver          ; get the version back into A from RAM
+        cpi     022h            ; compare to version 2.2
+        jz      usrlp0          ; good version - go start
+        jc      verlow          ; version too old
+        lxi     h,0             ; no title for this
+        mvi     d,5             ; flower box at line 5
+        mvi     e,16            ; flower box at column 16
+        mvi     a,8             ; 7 blank lines in box
+        call    flower          ; print a flower box
+        mvi     d,8             ; line 8
+        mvi     e,25            ; column 25
+        call    setcur          ; put cursor there
+        lxi     d,vhierr        ; warning message that CP/M is too new
+        mvi     c,strout        ; print string func
+        call    sys             ; syscall
+        mvi     d,9             ; line 9
+        mvi     e,25            ; column 25
+        call    setcur          ; put the cursor there
+        lxi     d,vhierr2       ; second line of message
+        mvi     c,strout        ; print func
+        call    sys             ; syscall
+        mvi     d,12            ; line 12
+        mvi     e,29            ; column 29
+        call    setcur          ; put cursor there
+        lxi     d,contmsg       ; press any key text
+        mvi     c,strout        ; print string func
+        call    sys             ; syscall
+        call    cin2uppr        ; wait for keypress
+        jmp     usrlp0          ; start up after warning
+verlow:                         ; CP/M is older than 2.2, this won't work
+        call    CRLF            ; a newline before this message
+        call    CRLF            ; another newline to be safe
+        call    CRLF            ; yet another
+        call    CRLF            ; one last one to clear the flower box
+        lxi     d,vlowerr       ; get message text
+        mvi     c,strout        ; print text func
+        call    sys             ; syscall
+        call    CRLF            ; one after, just to be more clear
+        call    CRLF            ; sigh
+        jmp     cleanup         ; return to CP/M
 
         ; start of main loop.  Entering at 'usrlp0' will result in a total
         ; re-read of filenames and screen redraw.  Entering at 'uinext' will
@@ -1012,7 +1061,7 @@ uistat3:
         lxi     d,uibold        ; bold text
         mvi     c,strout        ; make it so
         call    sys             ; syscall
-        lxi     d,cntmsg        ; press d for details, aany key text
+        lxi     d,cntmsg        ; press d for details, any key text
         mvi     c,strout        ; print func
         call    sys             ; syscall
         lxi     d,uireset       ; clear bold attribute
@@ -1314,6 +1363,12 @@ chkdsk1:
 chkdsk2:                        ; DPH (Disk Parameter Header) address is in H/L
         lxi     d,0ah           ; add 0x0a to address of DPH
         dad     d               ; that is address of DPB (Disk Parameter Block)
+        lda     cpmver          ; get CP/M version
+        cpi     022h            ; is it version 2.2?
+        jz      chkdsk2a        ; it is, no adjustment needed
+        lxi     d,02h           ; in CP/M 3, the address of the DPB is at 0x0c
+        dad     h               ; so, increment pointer by 2 to account for that
+chkdsk2a:
         xchg                    ; put that from H/L to D/E
         ldax    d               ; get byte at that address
         mov     l,a             ; that is the low byte of address of DPB
@@ -1461,7 +1516,24 @@ incfret:
 
 ;
 ; calcdsk
-; Calculate used space
+; Calculate used space.  This is done by loading a pointer to the
+; Allocation Vector.  The AV is an array of bytes, one bit for each
+; block on the disk.  Bit=1 means block in use.  We need to iterate
+; over all of the bytes in the array and count bits set to one.
+;
+; This subroutine is using all 3 16-bit register pairs and the accumulator:
+;       A   -> used to do logical AND to check each bit
+;       B/C -> count of used blocks
+;       D/E -> pointer to current byte in array
+;       H/L -> array index counter
+;
+; Because of this, the inner loop is unwound in the routine.  This seems
+; counter to computer science (talking about the loop of shifting A
+; 8 times to check each bit in the current byte).  But, if we made that a
+; loop, we'd have to write one of the register pair out to RAM (either a
+; variable or onto the stack) each iteration of the loop.  RAM is slow,
+; and this routine is slow enough, so it's actually more efficient to
+; make the program a bit larger by unwinding the loop.
 ;
 calcdsk:
         mvi     c,alloc         ; BDOS syscall to get allocation vector
@@ -3259,6 +3331,9 @@ prnui4:
 ;***************************************************
 canary  db      0beh,0efh,0cah,0feh
 errcan  db      'ERROR - Stack is corrupt!',CR,LF,'$'
+vlowerr db      'ERROR - Must be running CP/M version 2.2 or later :( $'
+vhierr  db      'WARNING - CP/M is newer than v2.2$'
+vhierr2 db      '      disk info may be wrong$'
 flowr0  db      '                                                      $'
 flowr1  db      ' +--------------------------------------------------+ $'
 flowr2  db      ' |                                                  | $'
@@ -3414,9 +3489,7 @@ hlpflt  db      'Notes about using file search filter',CR,LF,CR,LF
 ;***************************************************
 orgstk  ds      2               ; original stack pointer
 dpbase  ds      2               ; Disk Parameter Base address
-cinst   ds      1               ; call instruction
-addr    ds      2               ; address of get translation table
-cret    ds      1               ; return instruction
+cpmver  ds      1               ; CP/M version
 usrfnm  ds      fnlen+1         ; user entered filename buffer
 fcb2    ds      fcblen+1        ; another FCB for file operations
 allflag ds      1               ; flag to indicate "ALL" files
