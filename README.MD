@@ -25,7 +25,7 @@ The program is basically feature complete at this point:
 
 ### Long term roadmap
 + Increase file capacity
-+ Add compression/decompression using standard ZIP algorithms
++ Add compression/decompression using standard ZIP algorithms and CP/M library files
 
 ## About the program
 The program was written from scratch in 8080 assembly language.  All file I/O is handled by syscalls to CP/M; because of that, the program *should* work on any computer with an 8080 or Z80 CPU that is running CP/M 2.2, but I really can't guarantee that :/
@@ -40,36 +40,31 @@ When writing the program, I spent a lot of time trying to be sure to accurately 
 
 Another reason to use Assembly in the modern era: if you are ever thinking about getting into reverse engineering, security research, malware analysis, or Embedded/IoT/IIoT development you may be exposed to Assembly at some point.  Whether it's decompiled output in Ghidra or reading through a `.lst` file looking for optimizations, having some experience with Assembly will give you a good leg up.
 
-Final note:  **No LLM, coding agent, vibe, or other "AI" crap was or ever will be used in this project.  I have no desire to be around any of that clanker garbage.**
+Final note:  **No LLM, coding agent, vibe, or other "AI" was or ever will be used in this project.  I have no place in my life for that.**
 
 ### Building/installation
 There are a few ways to get the program:  
 * Print out the source listing and type it in by hand just like we did as kids, hand-typing in programs from magazines and books.  While it was a great way to learn, I really don't expect anyone to do that.
-* Transfer the source file to either a software Altair emulator, a hardware retro kit, or the real thing if you're lucky enough to have access to one.  There are a variety of ways to do that, see your docs.  
- 
-Once the `asm` file is on the system:  
-Assemble the program using CP/M's `asm` program.  Command line and output would be something like this (drive letters most likely different, etc.):  
+* Probably the easiest way is to download the latest build from the Releases of this repo.  That will be a zip archive with the latest `.com`, `.prn`, and `.hex` files.  The `hex` and `prn` files are included in case you want to use `DDT` to debug and explore program execution.
+* Build it from source!  Transfer the source file to either a software Altair emulator, a hardware retro kit, or the real thing if you're lucky enough to have access to one.  There are a variety of ways to do that, see your docs.  
+  * Once the `asm` file is on the system, assemble the program using CP/M's `asm` program.  Command line and output would be something like this (drive letters most likely different, etc.) *Note - Based on disk sizes, it may be necessary to direct `PRN` output to another drive, something like `asm stem.ccb` which would read asm file from C, output hex to C, and output prn to B*:
 ```  
-C>asm stem.ccb                                                               
-CP/M ASSEMBLER - VER 2.0
-2237
-011H USE FACTOR
-END OF ASSEMBLY
+        C>asm stem.ccb                                                               
+        CP/M ASSEMBLER - VER 2.0                                                        
+        2ED5                                                                            
+        017H USE FACTOR                                                                 
+        END OF ASSEMBLY
 ```           
-*Note - Based on disk sizes, it may be necessary to direct `PRN` output to another drive, something like `asm stem.ccb` which would read asm file from C, output hex to C, and output prn to B*
-
-Then use `load` to create loadable executable image:    
+  * Then use `load` to create loadable executable image:    
 ```  
-C>load stem                                                                     
-                                                                                        
-FIRST ADDRESS 0100
-LAST  ADDRESS 1E3C
-BYTES READ    1D3D
-RECORDS WRITTEN 3B  
+        C>load stem                                                                     
+                                                                                                
+        FIRST ADDRESS 0100                                                              
+        LAST  ADDRESS 2A02                                                              
+        BYTES READ    2903                                                              
+        RECORDS WRITTEN 53   
 ```   
 This process is almost instantaneous on a software-simulated Altair running on modern hardware.  On Altair-Duino hardware with disk I/O set to "real time", the build process will take several minutes!  Grab a coffee and enjoy the Blinkenlights :)
-
-The last way is to download the latest build from the Releases of this repo.  That will be a zip archive with the latest `.com`, `.prn`, and `.hex` files.  The `hex` and `prn` files are included in case you want to use `DDT` to debug and explore program execution. 
 
 ## Requirements
 The basic requirements are:
@@ -90,25 +85,25 @@ At times, I used a [docker-based emulator](https://gloveboxes.github.io/Altair-8
 ## Running the program
 From the command line, run `STEM`:  
 
-![title](./img/title.png)
+![title](./img/splash.png)
 
 Pressing the `H` key will show the program's help.  There are 3 pages of help information, the first of which is an abbreviated "short" help:
 
-![shortHelp](./img/shortHelp.png)
+![shortHelp](./img/helpShort.png)
 
 Pressing any key will show the second page of help which describes the screen.  Another key press brings up a bit more detailed information on each command.  Finally, one last keypress will bring up the file listing:
 
-![listing](./img/listingA.png)
+![listing](./img/listing_noFilter.png)
 
 The program divides the screen into 3 sections:
 + Breaking down the top line:
-  + `Listing of drive A:` - in this case, this is showing the listing of drive `A:` (obviously)
-  + `User Area 0` tells us that these are the files in CP/M user area 0.  CP/M 2.2 doesn't support directories/subdirectories, but CP/M 2.2 introduced "User Areas".  Basically, files can be logically divided into distinct User Areas from 0 to 15.  See CP/M documentation/online for detailed information. (`STEM` makes copying files between user areas a bit easier!)
-  + `(total of 48 files, 0 files tagged)` - in this case, the program found 48 files in drive `A:`, user area 0.  No files are currently tagged; more on file tagging below.
+  + `Listing of drive B:` - in this case, this is showing the listing of drive `B:` (obviously)
+  + `User Area 1` tells us that these are the files in CP/M user area 1.  CP/M 2.2 doesn't support directories/subdirectories, but CP/M 2.2 introduced "User Areas".  Basically, files can be logically divided into distinct User Areas from 0 to 15.  See CP/M documentation/online for detailed information. (`STEM` makes copying files between user areas a bit easier!)
+  + `(total of 24 files, 0 files tagged)` - in this case, the program found 24 files in drive `A:`, user area 1 with the current filter setting.  No files are currently tagged; more on file tagging below.
 
 + The middle section shows the actual file listing of files matching the current search filter.  Files are listed in 5 columns, each filename preceded by a placeholder to show tag status:  untagged files have an empty place holder (`[ ]`), tagged files are shown with a capital x (`[X]`).  *There is currently a limitation that only the first 85 files will be listed.*
 
-+ The bottom section consists of 3 lines
++ The bottom section consists of 3 lines  
   + The first line shows the currently selected file in **BOLD** if your terminal supports it.  
     + File selection is handled by the `N` and `P` keys; these move to the next or previous file in the listing respectively.  If at the first file, `P` will wrap around the last file; if at the last, `N` will wrap around to the first.
     + The `<SPACE>` bar will toggle tag status of the currently selected file
@@ -130,34 +125,34 @@ The program divides the screen into 3 sections:
 *Note - commands can be entered in upper or lower case*
 
 ### Tagging files 
-Commands are performed on "tagged" files.  Pressing the space bar will either "tag" or "untag" the selected file.  For example, 2 files have been "tagged", `STEM.COM` and `STEM.PRN`:  
+Commands are performed on "tagged" files.  Pressing the space bar will either "tag" or "untag" the selected file.  For example, 3 files have been "tagged", `LINES2.BAK`, `STEM.HEX`, and `STEM.PRN`:  
 
-![tags](./img/taggingFiles.png)
+![tags](./img/tagged.png)
 
 ### Deleting files
 Once one or more files are tagged, pressing the `D` key.  A dialog will prompt for confirmation of deletion.  Selecting `A` will delete the rest of the tagged files without further prompting:  
 
-![delete](./img/deleteConfirm.png)
+![delete](./img/delete.png)
 
 ### Copying files
 Tagged files will be copied by pressing the `C` key.  A dialog will prompt for confirmation and name for the copies:  
 
-![copyConfirm](./img/copyConfirm.png)
+![copyConfirm](./img/copy1.png)
 
-Copying a file to another drive can be acomplished by specifying that drive in the name, for example `C:STEM.PRN` will copy the currently tagged file to the `C:` drive.
+Copying a file to another drive can be acomplished by specifying that drive in the name, for example `a:leds1.bak` will copy `LEDS1.ASM` to the `A:` drive.
 
-![copyName](./img/copyName.png)
+![copyName](./img/copy2.png)
 
 After copying, a dialog will show how many 128-byte blocks were copied:
 
-![copyDone](./img/copyDone.png)
+![copyDone](./img/copy3.png)
 
 *NOTE - filenames will automatically be converted to uppercase before copying*
 
 ### Displaying files
 Tagged files will be displayed with the `T` key.  A dialog will prompt for confirmation of display.  ASCII/Text files will be displayed one page at a time:
 
-![display text](./img/displayText.png)  
+![display text](./img/displayASCII.png)  
 
 Binary files will displayed as a hex dump with 256 bytes per page:
 
@@ -166,14 +161,14 @@ Binary files will displayed as a hex dump with 256 bytes per page:
 ### Renaming files
 Tagged files will be renamed with the `R` key.  A dialog will prompt for the new name for each file:  
 
-![rename](./img/rename.png)
+![rename](./img/rename2.png)
 
 *NOTE - filenames will automatically be converted to uppercase before renaming*
 
 ### Copying files to another user area
 Tagged files will be copied to another user area with the `M` key.  A dialog will prompt for the target user area number.  A dialog will show progress as each file is copied.
 
-![copyToUA](./img/moveUAProgress.png)
+![copyToUA](./img/move1.png)
 
 *NOTE - filenames will automatically be converted to uppercase before copying*  
 *NOTE - existing files with target name in target user area will be deleted before copy*  
@@ -181,7 +176,7 @@ Tagged files will be copied to another user area with the `M` key.  A dialog wil
 ### Logging in to another disk
 Changing to another disk, "Logging In" in CP/M parlance, is done with the `L` key.  A dialog will prompt for new disk:
 
-![log](./img/selectDisk.png)
+![log](./img/log.png)
 
 ### Disk information
 Disk information is displayed with the `I` key.  The information shown is total disk capacity in KB, amount of disk allocated/used in KB, number of blocks on the disk, the size of each block in KB, the maximum number of directory entries available, and the count of directory entries used.  
@@ -196,7 +191,7 @@ Another thing to keep in mind is that files can be spread across several user ar
 
 Pressing the `D` key while this dialog is showing will bring up the "Files per User Area" display:
 
-![file Count](./img/fcount.png)
+![file Count](./img/infoDetails.png)
 
 *NOTE - it takes a few seconds to calculate all of the disk information*
 
@@ -213,11 +208,21 @@ General information on setting filters:
 + It is not necessary to enter the entire filter string; un-entered characters are set to the wildchard character
 + Entered characters are automatically converted to upper case
 
+Pressing `F` will bring up the filter dialog.  The current filter is shown along with a prompt for the new filter:
+
+![Enter Filter](./img/filter1.png)
+
+In this case, a filter of `.ASM` was entered.  As seen in the previous screenshot with no filter, there were 24 files found of various types.  After the filter was applied only files of type `ASM` are shown, and the file count is now 7:
+
+![Filter Applied](./img/filter2.png)
+
 #### Filter Examples
 + Default filter of `????????.???` -> search for all files
 + `ST.ASM` -> will expand to `ST??????.ASM` and will search for all files that start with `ST` and are of type `ASM`
 + `.TXT` -> will expand to `????????.TXT` and will search for all files that are of type `TXT`
 + `?S?X.T` -> will expand to `?S?X????.T??` and will search for all files that have an `S` in the second letter of filename, have an `X` in the fourth, and have a type/extension that begins with `T`.
+
+
 
 ## Contributing
 Contributions are great!  Here are a couple of ways:
